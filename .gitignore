@@ -221,3 +221,6 @@ __marimo__/
 # AI
 docs/
 AGENTS.md
+
+# Generated development assets
+static/
