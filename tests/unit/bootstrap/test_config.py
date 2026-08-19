@@ -15,6 +15,7 @@ REQUIRED_VARIABLES = (
     "REDIS_PORT",
     "REDIS_DB",
     "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_OWNER_ID",
 )
 
 
@@ -28,6 +29,7 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("REDIS_PORT", "6379")
     monkeypatch.setenv("REDIS_DB", "1")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:test-token")
+    monkeypatch.setenv("TELEGRAM_OWNER_ID", "987654321")
 
     settings = Settings(_env_file=None)
 
@@ -36,6 +38,7 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     assert settings.redis_url == "redis://cache:6379/1"
     assert settings.telegram_bot_token.get_secret_value() == "123456789:test-token"
+    assert settings.telegram_owner_id == 987654321
 
 
 def test_settings_loads_from_dotenv(
@@ -57,6 +60,7 @@ def test_settings_loads_from_dotenv(
                 "REDIS_PORT=6379",
                 "REDIS_DB=0",
                 "TELEGRAM_BOT_TOKEN=123456789:test-token",
+                "TELEGRAM_OWNER_ID=987654321",
             ),
         ),
         encoding="utf-8",

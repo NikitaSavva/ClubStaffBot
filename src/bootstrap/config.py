@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     redis_db: int = Field(ge=0)
 
     telegram_bot_token: SecretStr = Field(min_length=1)
+    telegram_owner_id: int = Field(gt=0)
 
     @property
     def database_url(self) -> str:

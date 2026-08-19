@@ -5,6 +5,7 @@
 .mypy_cache
 .pytest_cache
 .ruff_cache
+static
 **/__pycache__
 *.py[cod]
 .DS_Store

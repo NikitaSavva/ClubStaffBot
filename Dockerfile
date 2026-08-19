@@ -9,6 +9,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
+COPY alembic.ini .
+COPY alembic ./alembic
 COPY src ./src
 
 CMD ["uvicorn", "entrypoints.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
