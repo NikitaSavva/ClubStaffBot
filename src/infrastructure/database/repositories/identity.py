@@ -5,14 +5,33 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.identity.errors import UserAlreadyRegisteredError
-from domain.identity import BotInvite, Role, SystemRoleCode, User
+from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
 from infrastructure.database.models import (
+    AthleteModel,
     AuditLogModel,
     BotInviteModel,
     RoleModel,
     UserModel,
     UserRoleModel,
 )
+
+
+class SqlAlchemyAthleteRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, athlete: Athlete) -> int:
+        model = AthleteModel(
+            athlete_public_id=athlete.athlete_public_id,
+            user_id=athlete.user_id,
+            first_name=athlete.first_name,
+            last_name=athlete.last_name,
+            phone=athlete.phone,
+            is_active=athlete.is_active,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        return model.id
 
 
 class SqlAlchemyUserRepository:

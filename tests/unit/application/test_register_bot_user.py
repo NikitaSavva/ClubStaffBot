@@ -10,7 +10,7 @@ from application.identity.errors import (
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
 )
-from domain.identity import BotInvite, Role, SystemRoleCode, User
+from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
@@ -28,7 +28,7 @@ class FakeTokenHasher:
 class FakeUnitOfWork:
     def __init__(self) -> None:
         self.entered = False
-        self.committed = False
+        self.commit_count = 0
         self.exit_exception: type[BaseException] | None = None
 
     async def __aenter__(self) -> Self:
@@ -44,7 +44,7 @@ class FakeUnitOfWork:
         self.exit_exception = exc_type
 
     async def commit(self) -> None:
-        self.committed = True
+        self.commit_count += 1
 
 
 class FakeUserRepository:
@@ -63,6 +63,18 @@ class FakeUserRepository:
     async def add(self, user: User) -> int:
         self.added.append(user)
         return 101
+
+
+class FakeAthleteRepository:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.error = error
+        self.added: list[Athlete] = []
+
+    async def add(self, athlete: Athlete) -> int:
+        if self.error is not None:
+            raise self.error
+        self.added.append(athlete)
+        return 201
 
 
 class FakeRoleRepository:
@@ -178,15 +190,18 @@ def build_interactor(
     invite: BotInvite | None = None,
     role: Role | None = None,
     user: User | None = None,
+    athlete_error: BaseException | None = None,
 ) -> tuple[
     RegisterBotUserInteractor,
     FakeUserRepository,
+    FakeAthleteRepository,
     FakeRoleRepository,
     FakeBotInviteRepository,
     FakeAuditLogRepository,
     FakeUnitOfWork,
 ]:
     users = FakeUserRepository(user)
+    athletes = FakeAthleteRepository(athlete_error)
     roles = FakeRoleRepository(role if role is not None else athlete_role())
     invites = FakeBotInviteRepository(
         invite if invite is not None else active_invite()
@@ -195,6 +210,7 @@ def build_interactor(
     uow = FakeUnitOfWork()
     interactor = RegisterBotUserInteractor(
         user_repository=users,
+        athlete_repository=athletes,
         role_repository=roles,
         bot_invite_repository=invites,
         audit_log_repository=audit_log,
@@ -202,11 +218,13 @@ def build_interactor(
         clock=FrozenClock(),
         token_hasher=FakeTokenHasher(),
     )
-    return interactor, users, roles, invites, audit_log, uow
+    return interactor, users, athletes, roles, invites, audit_log, uow
 
 
 async def test_successful_registration_assigns_athlete_role_and_commits() -> None:
-    interactor, users, roles, invites, audit_log, uow = build_interactor()
+    interactor, users, athletes, roles, invites, audit_log, uow = (
+        build_interactor()
+    )
 
     result = await interactor(command())
 
@@ -235,6 +253,15 @@ async def test_successful_registration_assigns_athlete_role_and_commits() -> Non
             "assigned_at": NOW,
         }
     ]
+    assert len(athletes.added) == 1
+    athlete = athletes.added[0]
+    assert athlete.id is None
+    assert athlete.athlete_public_id.version == 4
+    assert athlete.user_id == 101
+    assert athlete.first_name == "New"
+    assert athlete.last_name is None
+    assert athlete.phone is None
+    assert athlete.is_active
     assert audit_log.records == [
         {
             "actor_user_id": 101,
@@ -244,7 +271,7 @@ async def test_successful_registration_assigns_athlete_role_and_commits() -> Non
         }
     ]
     assert uow.entered
-    assert uow.committed
+    assert uow.commit_count == 1
     assert uow.exit_exception is None
 
 
@@ -258,7 +285,7 @@ async def test_successful_registration_assigns_athlete_role_and_commits() -> Non
     ],
 )
 async def test_unavailable_invite_does_not_commit(invite: BotInvite) -> None:
-    interactor, users, roles, _, audit_log, uow = build_interactor(
+    interactor, users, athletes, roles, _, audit_log, uow = build_interactor(
         invite=invite
     )
 
@@ -266,27 +293,31 @@ async def test_unavailable_invite_does_not_commit(invite: BotInvite) -> None:
         await interactor(command())
 
     assert users.added == []
+    assert athletes.added == []
     assert roles.assignments == []
     assert audit_log.records == []
-    assert not uow.committed
+    assert uow.commit_count == 0
     assert uow.exit_exception is InvalidBotInviteError
 
 
 async def test_unknown_invite_does_not_commit() -> None:
-    interactor, users, roles, invites, audit_log, uow = build_interactor()
+    interactor, users, athletes, roles, invites, audit_log, uow = (
+        build_interactor()
+    )
     invites.invite = None
 
     with pytest.raises(InvalidBotInviteError):
         await interactor(command())
 
     assert users.added == []
+    assert athletes.added == []
     assert roles.assignments == []
     assert audit_log.records == []
-    assert not uow.committed
+    assert uow.commit_count == 0
 
 
 async def test_existing_telegram_user_is_controlled_failure() -> None:
-    interactor, users, roles, _, audit_log, uow = build_interactor(
+    interactor, users, athletes, roles, _, audit_log, uow = build_interactor(
         user=existing_user()
     )
 
@@ -294,9 +325,10 @@ async def test_existing_telegram_user_is_controlled_failure() -> None:
         await interactor(command())
 
     assert users.added == []
+    assert athletes.added == []
     assert roles.assignments == []
     assert audit_log.records == []
-    assert not uow.committed
+    assert uow.commit_count == 0
 
 
 @pytest.mark.parametrize(
@@ -307,25 +339,44 @@ async def test_existing_telegram_user_is_controlled_failure() -> None:
     ],
 )
 async def test_misconfigured_athlete_role_does_not_commit(role: Role) -> None:
-    interactor, users, roles, _, audit_log, uow = build_interactor(role=role)
+    interactor, users, athletes, roles, _, audit_log, uow = build_interactor(
+        role=role
+    )
 
     with pytest.raises(RequiredSystemRoleMissingError):
         await interactor(command())
 
     assert users.added == []
+    assert athletes.added == []
     assert roles.assignments == []
     assert audit_log.records == []
-    assert not uow.committed
+    assert uow.commit_count == 0
 
 
 async def test_missing_athlete_role_does_not_commit() -> None:
-    interactor, users, roles, _, audit_log, uow = build_interactor()
+    interactor, users, athletes, roles, _, audit_log, uow = build_interactor()
     roles.role = None
 
     with pytest.raises(RequiredSystemRoleMissingError):
         await interactor(command())
 
     assert users.added == []
+    assert athletes.added == []
     assert roles.assignments == []
     assert audit_log.records == []
-    assert not uow.committed
+    assert uow.commit_count == 0
+
+
+async def test_athlete_failure_does_not_audit_or_commit() -> None:
+    interactor, _, athletes, roles, _, audit_log, uow = build_interactor(
+        athlete_error=RuntimeError("athlete persistence failed")
+    )
+
+    with pytest.raises(RuntimeError, match="athlete persistence failed"):
+        await interactor(command())
+
+    assert athletes.added == []
+    assert len(roles.assignments) == 1
+    assert audit_log.records == []
+    assert uow.commit_count == 0
+    assert uow.exit_exception is RuntimeError

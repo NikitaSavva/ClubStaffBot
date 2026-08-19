@@ -14,6 +14,7 @@ from bootstrap.development import create_development_invite
 from bootstrap.startup import bootstrap_system_roles
 from entrypoints.bot import create_dispatcher, run_bot
 from infrastructure.database.models import (
+    AthleteModel,
     AuditLogModel,
     RoleModel,
     UserModel,
@@ -128,8 +129,20 @@ async def test_synthetic_start_registration_flow(
                         AuditLogModel.action == "USER_REGISTERED",
                     )
                 )
+                athlete = await session.scalar(
+                    select(AthleteModel).where(
+                        AthleteModel.user_id == user.id
+                    )
+                )
             assert role_code == "ATHLETE"
             assert audit is not None
+            assert athlete is not None
+            assert athlete.user_id == user.id
+            assert athlete.athlete_public_id.version == 4
+            assert athlete.first_name == "Functional"
+            assert athlete.last_name == "User"
+            assert athlete.phone is None
+            assert athlete.is_active
             assert invalid_user is None
         finally:
             await engine.dispose()

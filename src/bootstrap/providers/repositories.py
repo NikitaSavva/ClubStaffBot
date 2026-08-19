@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.common import UnitOfWork
 from application.identity.ports import (
+    AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
     RoleRepository,
     UserRepository,
 )
 from infrastructure.database.repositories import (
+    SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
@@ -18,6 +20,13 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_athlete_repository(
+        self,
+        session: AsyncSession,
+    ) -> AthleteRepository:
+        return SqlAlchemyAthleteRepository(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_user_repository(
         self,

@@ -1,4 +1,5 @@
 from infrastructure.database.repositories.identity import (
+    SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
@@ -6,6 +7,7 @@ from infrastructure.database.repositories.identity import (
 )
 
 __all__ = [
+    "SqlAlchemyAthleteRepository",
     "SqlAlchemyAuditLogRepository",
     "SqlAlchemyBotInviteRepository",
     "SqlAlchemyRoleRepository",

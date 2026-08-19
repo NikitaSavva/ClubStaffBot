@@ -7,13 +7,14 @@ from application.identity.errors import (
     UserAlreadyRegisteredError,
 )
 from application.identity.ports import (
+    AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
     InviteTokenHasher,
     RoleRepository,
     UserRepository,
 )
-from domain.identity import SystemRoleCode, User
+from domain.identity import Athlete, SystemRoleCode, User
 
 USER_REGISTERED_ACTION = "USER_REGISTERED"
 USER_ENTITY_TYPE = "USER"
@@ -23,6 +24,7 @@ class RegisterBotUserInteractor:
     def __init__(
         self,
         user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
         role_repository: RoleRepository,
         bot_invite_repository: BotInviteRepository,
         audit_log_repository: AuditLogRepository,
@@ -31,6 +33,7 @@ class RegisterBotUserInteractor:
         token_hasher: InviteTokenHasher,
     ) -> None:
         self._users = user_repository
+        self._athletes = athlete_repository
         self._roles = role_repository
         self._invites = bot_invite_repository
         self._audit_log = audit_log_repository
@@ -76,6 +79,13 @@ class RegisterBotUserInteractor:
                 role_id=role.id,
                 assigned_by_user_id=None,
                 assigned_at=now,
+            )
+            await self._athletes.add(
+                Athlete.create_for_registered_user(
+                    user_id=user_id,
+                    first_name=command.first_name,
+                    last_name=command.last_name,
+                )
             )
             await self._audit_log.add(
                 actor_user_id=user_id,

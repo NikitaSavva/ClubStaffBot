@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from application.common import UnitOfWork
 from application.identity import RegisterBotUserInteractor
 from application.identity.ports import (
+    AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
     InviteTokenHasher,
@@ -16,6 +17,7 @@ from application.identity.ports import (
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from infrastructure.database.repositories import (
+    SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
@@ -60,6 +62,7 @@ async def test_container_resolves_app_and_request_dependencies(
             second_session = await request_container.get(AsyncSession)
             assert first_session is second_session
             user_repository = await request_container.get(UserRepository)
+            athlete_repository = await request_container.get(AthleteRepository)
             role_repository = await request_container.get(RoleRepository)
             invite_repository = await request_container.get(
                 BotInviteRepository
@@ -71,12 +74,14 @@ async def test_container_resolves_app_and_request_dependencies(
             interactor = await request_container.get(RegisterBotUserInteractor)
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
+            assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
             assert isinstance(role_repository, SqlAlchemyRoleRepository)
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
             assert isinstance(interactor, RegisterBotUserInteractor)
             assert user_repository._session is first_session
+            assert athlete_repository._session is first_session
             assert role_repository._session is first_session
             assert invite_repository._session is first_session
             assert audit_repository._session is first_session

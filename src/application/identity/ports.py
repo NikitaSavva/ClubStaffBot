@@ -1,13 +1,17 @@
 from datetime import datetime
 from typing import Protocol
 
-from domain.identity import BotInvite, Role, SystemRoleCode, User
+from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
 
 
 class UserRepository(Protocol):
     async def get_by_telegram_id(self, telegram_id: int) -> User | None: ...
 
     async def add(self, user: User) -> int: ...
+
+
+class AthleteRepository(Protocol):
+    async def add(self, athlete: Athlete) -> int: ...
 
 
 class RoleRepository(Protocol):
