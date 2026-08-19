@@ -234,7 +234,7 @@ async def test_multiple_athletes_without_users_are_allowed(
 async def test_user_role_pair_is_unique(db_session: AsyncSession) -> None:
     user = await add_user(db_session, telegram_id=1003)
     role = RoleModel(
-        code="TRAINER",
+        code=f"test-role-{uuid4()}",
         name="Trainer",
         is_system=True,
         is_active=True,

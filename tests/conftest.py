@@ -4,12 +4,14 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 from testcontainers.community.postgres import PostgresContainer
 
+from bootstrap.config import Settings
 from infrastructure.database.session import create_engine, create_session_factory
 
-PROJECT_ROOT = Path(__file__).parents[3]
+PROJECT_ROOT = Path(__file__).parents[1]
 
 
 def alembic_config(database_url: str) -> Config:
@@ -45,3 +47,25 @@ async def db_session(database_url: str) -> AsyncIterator[AsyncSession]:
                 await session.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+def integration_settings(database_url: str) -> Settings:
+    url = make_url(database_url)
+    assert url.host is not None
+    assert url.database is not None
+    assert url.username is not None
+    assert url.password is not None
+    return Settings(
+        postgres_host=url.host,
+        postgres_port=url.port or 5432,
+        postgres_db=url.database,
+        postgres_user=url.username,
+        postgres_password=url.password,
+        redis_host="localhost",
+        redis_port=6379,
+        redis_db=0,
+        telegram_bot_token="123456789:test-token",
+        telegram_owner_id=987654321,
+        _env_file=None,
+    )
