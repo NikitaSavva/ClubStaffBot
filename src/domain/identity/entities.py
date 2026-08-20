@@ -11,6 +11,11 @@ class SystemRoleCode(StrEnum):
     ADMINISTRATOR = "ADMINISTRATOR"
 
 
+class BotInvitePurpose(StrEnum):
+    REGISTRATION = "REGISTRATION"
+    ATHLETE_LINK = "ATHLETE_LINK"
+
+
 @dataclass(frozen=True, slots=True)
 class User:
     id: int | None
@@ -62,15 +67,27 @@ class Role:
 
 @dataclass(frozen=True, slots=True)
 class BotInvite:
-    id: int
+    id: int | None
     token_hash: str
+    purpose: BotInvitePurpose
+    athlete_id: int | None
     is_active: bool
     expires_at: datetime | None
     revoked_at: datetime | None
+    consumed_at: datetime | None
 
     def is_valid(self, at: datetime) -> bool:
+        has_valid_target = (
+            self.purpose is BotInvitePurpose.REGISTRATION
+            and self.athlete_id is None
+        ) or (
+            self.purpose is BotInvitePurpose.ATHLETE_LINK
+            and self.athlete_id is not None
+        )
         return (
-            self.is_active
+            has_valid_target
+            and self.is_active
             and self.revoked_at is None
+            and self.consumed_at is None
             and (self.expires_at is None or self.expires_at > at)
         )

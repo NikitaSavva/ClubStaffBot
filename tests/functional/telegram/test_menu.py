@@ -79,17 +79,25 @@ async def add_user_with_role(
 
 
 @pytest.mark.parametrize(
-    ("role_code", "expected_title", "expected_action"),
+    ("role_code", "expected_buttons"),
     [
         (
             SystemRoleCode.ADMINISTRATOR,
-            "Меню администратора",
-            "administrator.home",
+            (
+                ("Меню администратора", "administrator.home"),
+                (
+                    "Связать аккаунт",
+                    "administrator.link_athlete_account",
+                ),
+            ),
         ),
         (
             SystemRoleCode.ATHLETE,
-            "Меню спортсмена",
-            "athlete.home",
+            (("Меню спортсмена", "athlete.home"),),
+        ),
+        (
+            SystemRoleCode.TRAINER,
+            (("Меню тренера", "trainer.home"),),
         ),
     ],
 )
@@ -97,8 +105,7 @@ async def test_synthetic_user_receives_role_keyboard(
     integration_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     role_code: SystemRoleCode,
-    expected_title: str,
-    expected_action: str,
+    expected_buttons: tuple[tuple[str, str], ...],
 ) -> None:
     container = create_container(integration_settings)
     sent_methods: list[TelegramMethod[Any]] = []
@@ -140,8 +147,7 @@ async def test_synthetic_user_receives_role_keyboard(
     assert isinstance(method, SendMessage)
     assert method.text == MENU_TEXT
     assert isinstance(method.reply_markup, InlineKeyboardMarkup)
-    assert len(method.reply_markup.inline_keyboard) == 1
-    assert len(method.reply_markup.inline_keyboard[0]) == 1
-    button = method.reply_markup.inline_keyboard[0][0]
-    assert button.text == expected_title
-    assert button.callback_data == expected_action
+    buttons = [row[0] for row in method.reply_markup.inline_keyboard]
+    assert [(button.text, button.callback_data) for button in buttons] == list(
+        expected_buttons
+    )

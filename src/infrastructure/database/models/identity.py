@@ -4,7 +4,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -14,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from domain.identity import BotInvitePurpose
 from infrastructure.database.models.base import Base
 from infrastructure.database.models.mixins import TimestampMixin
 
@@ -75,9 +78,22 @@ class UserRoleModel(Base):
 
 class BotInviteModel(Base):
     __tablename__ = "bot_invites"
+    __table_args__ = (
+        CheckConstraint(
+            "(purpose = 'REGISTRATION' AND athlete_id IS NULL) OR "
+            "(purpose = 'ATHLETE_LINK' AND athlete_id IS NOT NULL)",
+            name="purpose_athlete",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     token_hash: Mapped[str] = mapped_column(String, unique=True)
+    purpose: Mapped[BotInvitePurpose] = mapped_column(
+        Enum(BotInvitePurpose, name="bot_invite_purpose")
+    )
+    athlete_id: Mapped[int | None] = mapped_column(
+        ForeignKey("athletes.id")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -85,3 +101,6 @@ class BotInviteModel(Base):
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )

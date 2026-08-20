@@ -73,40 +73,50 @@ def build_interactor(
 
 
 @pytest.mark.parametrize(
-    ("role_code", "expected_item"),
+    ("role_code", "expected_items"),
     [
         (
             SystemRoleCode.ADMINISTRATOR,
-            MenuItem(
-                action_id="administrator.home",
-                title="Меню администратора",
+            (
+                MenuItem(
+                    action_id="administrator.home",
+                    title="Меню администратора",
+                ),
+                MenuItem(
+                    action_id="administrator.link_athlete_account",
+                    title="Связать аккаунт",
+                ),
             ),
         ),
         (
             SystemRoleCode.ATHLETE,
-            MenuItem(
-                action_id="athlete.home",
-                title="Меню спортсмена",
+            (
+                MenuItem(
+                    action_id="athlete.home",
+                    title="Меню спортсмена",
+                ),
             ),
         ),
         (
             SystemRoleCode.TRAINER,
-            MenuItem(
-                action_id="trainer.home",
-                title="Меню тренера",
+            (
+                MenuItem(
+                    action_id="trainer.home",
+                    title="Меню тренера",
+                ),
             ),
         ),
     ],
 )
 async def test_role_receives_its_application_menu_item(
     role_code: SystemRoleCode,
-    expected_item: MenuItem,
+    expected_items: tuple[MenuItem, ...],
 ) -> None:
     interactor, users, roles = build_interactor(role_codes=(role_code,))
 
     result = await interactor(GetUserMenuContextQuery(telegram_id=TELEGRAM_ID))
 
-    assert result == MenuContext(items=(expected_item,))
+    assert result == MenuContext(items=expected_items)
     assert type(result) is MenuContext
     assert all(type(item) is MenuItem for item in result.items)
     assert users.requested_telegram_ids == [TELEGRAM_ID]
@@ -127,6 +137,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
 
     assert [item.action_id for item in result.items] == [
         "administrator.home",
+        "administrator.link_athlete_account",
         "trainer.home",
         "athlete.home",
     ]

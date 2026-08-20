@@ -6,13 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from application.common import UnitOfWork
 from application.identity import (
+    CreateAthleteAccountLinkInviteInteractor,
     GetUserMenuContextInteractor,
+    LinkAthleteAccountInteractor,
+    ListUnlinkedAthletesInteractor,
     RegisterBotUserInteractor,
 )
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
+    InviteTokenGenerator,
     InviteTokenHasher,
     RoleRepository,
     UserRepository,
@@ -80,6 +84,15 @@ async def test_container_resolves_app_and_request_dependencies(
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
             )
+            list_unlinked_interactor = await request_container.get(
+                ListUnlinkedAthletesInteractor
+            )
+            create_link_invite_interactor = await request_container.get(
+                CreateAthleteAccountLinkInviteInteractor
+            )
+            link_account_interactor = await request_container.get(
+                LinkAthleteAccountInteractor
+            )
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
@@ -92,6 +105,18 @@ async def test_container_resolves_app_and_request_dependencies(
                 RegisterBotUserInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
+            assert isinstance(
+                list_unlinked_interactor,
+                ListUnlinkedAthletesInteractor,
+            )
+            assert isinstance(
+                create_link_invite_interactor,
+                CreateAthleteAccountLinkInviteInteractor,
+            )
+            assert isinstance(
+                link_account_interactor,
+                LinkAthleteAccountInteractor,
+            )
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
@@ -100,9 +125,17 @@ async def test_container_resolves_app_and_request_dependencies(
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository
             assert menu_interactor._roles is role_repository
+            assert link_account_interactor._users is user_repository
+            assert link_account_interactor._athletes is athlete_repository
+            assert link_account_interactor._invites is invite_repository
+            assert registration_interactor._link_athlete_account is (
+                link_account_interactor
+            )
 
         token_hasher = await container.get(InviteTokenHasher)
+        token_generator = await container.get(InviteTokenGenerator)
         assert len(token_hasher.hash("test-token")) == 64
+        assert len(token_generator.generate()) >= 32
 
         await container.close()
 

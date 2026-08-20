@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,41 @@ class SqlAlchemyAthleteRepository:
         self._session.add(model)
         await self._session.flush()
         return model.id
+
+    async def get_by_id_for_update(
+        self,
+        athlete_id: int,
+    ) -> Athlete | None:
+        model = await self._session.scalar(
+            select(AthleteModel)
+            .where(AthleteModel.id == athlete_id)
+            .with_for_update()
+        )
+        return _to_athlete(model)
+
+    async def list_unlinked(self) -> tuple[Athlete, ...]:
+        models = await self._session.scalars(
+            select(AthleteModel)
+            .where(AthleteModel.user_id.is_(None))
+            .order_by(
+                AthleteModel.last_name.asc().nulls_last(),
+                AthleteModel.first_name.asc(),
+                AthleteModel.id.asc(),
+            )
+        )
+        return tuple(_to_required_athlete(model) for model in models)
+
+    async def link_to_user(self, *, athlete_id: int, user_id: int) -> bool:
+        linked_athlete_id = await self._session.scalar(
+            update(AthleteModel)
+            .where(
+                AthleteModel.id == athlete_id,
+                AthleteModel.user_id.is_(None),
+            )
+            .values(user_id=user_id)
+            .returning(AthleteModel.id)
+        )
+        return linked_athlete_id is not None
 
 
 class SqlAlchemyUserRepository:
@@ -138,15 +173,44 @@ class SqlAlchemyBotInviteRepository:
                 BotInviteModel.token_hash == token_hash
             )
         )
-        if model is None:
-            return None
-        return BotInvite(
-            id=model.id,
-            token_hash=model.token_hash,
-            is_active=model.is_active,
-            expires_at=model.expires_at,
-            revoked_at=model.revoked_at,
+        return _to_bot_invite(model)
+
+    async def get_by_token_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> BotInvite | None:
+        model = await self._session.scalar(
+            select(BotInviteModel)
+            .where(BotInviteModel.token_hash == token_hash)
+            .with_for_update()
         )
+        return _to_bot_invite(model)
+
+    async def add(self, invite: BotInvite) -> int:
+        model = BotInviteModel(
+            token_hash=invite.token_hash,
+            purpose=invite.purpose,
+            athlete_id=invite.athlete_id,
+            is_active=invite.is_active,
+            expires_at=invite.expires_at,
+            revoked_at=invite.revoked_at,
+            consumed_at=invite.consumed_at,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        return model.id
+
+    async def consume(self, *, invite_id: int, consumed_at: datetime) -> bool:
+        consumed_invite_id = await self._session.scalar(
+            update(BotInviteModel)
+            .where(
+                BotInviteModel.id == invite_id,
+                BotInviteModel.consumed_at.is_(None),
+            )
+            .values(consumed_at=consumed_at)
+            .returning(BotInviteModel.id)
+        )
+        return consumed_invite_id is not None
 
 
 class SqlAlchemyAuditLogRepository:
@@ -170,3 +234,36 @@ class SqlAlchemyAuditLogRepository:
                 payload=None,
             )
         )
+
+
+def _to_athlete(model: AthleteModel | None) -> Athlete | None:
+    if model is None:
+        return None
+    return _to_required_athlete(model)
+
+
+def _to_required_athlete(model: AthleteModel) -> Athlete:
+    return Athlete(
+        id=model.id,
+        athlete_public_id=model.athlete_public_id,
+        user_id=model.user_id,
+        first_name=model.first_name,
+        last_name=model.last_name,
+        phone=model.phone,
+        is_active=model.is_active,
+    )
+
+
+def _to_bot_invite(model: BotInviteModel | None) -> BotInvite | None:
+    if model is None:
+        return None
+    return BotInvite(
+        id=model.id,
+        token_hash=model.token_hash,
+        purpose=model.purpose,
+        athlete_id=model.athlete_id,
+        is_active=model.is_active,
+        expires_at=model.expires_at,
+        revoked_at=model.revoked_at,
+        consumed_at=model.consumed_at,
+    )

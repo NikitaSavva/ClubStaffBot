@@ -3,6 +3,7 @@ import secrets
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from application.identity.ports import InviteTokenHasher
+from domain.identity import BotInvitePurpose
 from infrastructure.database.models import BotInviteModel
 
 
@@ -17,9 +18,12 @@ async def create_development_invite(
         session.add(
             BotInviteModel(
                 token_hash=token_hash,
+                purpose=BotInvitePurpose.REGISTRATION,
+                athlete_id=None,
                 is_active=True,
                 expires_at=None,
                 revoked_at=None,
+                consumed_at=None,
             )
         )
 
