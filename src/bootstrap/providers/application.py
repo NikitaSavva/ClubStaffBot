@@ -1,7 +1,10 @@
 from dishka import Provider, Scope, provide
 
 from application.common import Clock, UnitOfWork
-from application.identity.interactors import RegisterBotUserInteractor
+from application.identity.interactors import (
+    GetUserMenuContextInteractor,
+    RegisterBotUserInteractor,
+)
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
@@ -13,6 +16,17 @@ from application.identity.ports import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_get_user_menu_context_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+    ) -> GetUserMenuContextInteractor:
+        return GetUserMenuContextInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_register_bot_user_interactor(
         self,

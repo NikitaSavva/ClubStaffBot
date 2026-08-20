@@ -5,7 +5,10 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from application.common import UnitOfWork
-from application.identity import RegisterBotUserInteractor
+from application.identity import (
+    GetUserMenuContextInteractor,
+    RegisterBotUserInteractor,
+)
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
@@ -71,7 +74,12 @@ async def test_container_resolves_app_and_request_dependencies(
                 AuditLogRepository
             )
             unit_of_work = await request_container.get(UnitOfWork)
-            interactor = await request_container.get(RegisterBotUserInteractor)
+            registration_interactor = await request_container.get(
+                RegisterBotUserInteractor
+            )
+            menu_interactor = await request_container.get(
+                GetUserMenuContextInteractor
+            )
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
@@ -79,13 +87,19 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
-            assert isinstance(interactor, RegisterBotUserInteractor)
+            assert isinstance(
+                registration_interactor,
+                RegisterBotUserInteractor,
+            )
+            assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
             assert invite_repository._session is first_session
             assert audit_repository._session is first_session
             assert unit_of_work._session is first_session
+            assert menu_interactor._users is user_repository
+            assert menu_interactor._roles is role_repository
 
         token_hasher = await container.get(InviteTokenHasher)
         assert len(token_hasher.hash("test-token")) == 64

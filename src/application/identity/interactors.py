@@ -1,11 +1,14 @@
 from application.common import Clock, UnitOfWork
 from application.identity.commands import RegisterBotUserCommand
-from application.identity.dto import RegisterBotUserResult
+from application.identity.dto import MenuContext, RegisterBotUserResult
 from application.identity.errors import (
     InvalidBotInviteError,
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
+    UserHasNoRolesError,
+    UserNotFoundError,
 )
+from application.identity.menu import build_menu_context
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
@@ -14,6 +17,7 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.identity.queries import GetUserMenuContextQuery
 from domain.identity import Athlete, SystemRoleCode, User
 
 USER_REGISTERED_ACTION = "USER_REGISTERED"
@@ -101,3 +105,27 @@ class RegisterBotUserInteractor:
             role_code=SystemRoleCode.ATHLETE,
             registered_at=now,
         )
+
+
+class GetUserMenuContextInteractor:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+    ) -> None:
+        self._users = user_repository
+        self._roles = role_repository
+
+    async def __call__(
+        self,
+        query: GetUserMenuContextQuery,
+    ) -> MenuContext:
+        user = await self._users.get_by_telegram_id(query.telegram_id)
+        if user is None or user.id is None:
+            raise UserNotFoundError
+
+        role_codes = await self._roles.list_active_codes_for_user(user.id)
+        if not role_codes:
+            raise UserHasNoRolesError
+
+        return build_menu_context(role_codes)
