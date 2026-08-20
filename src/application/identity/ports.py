@@ -17,6 +17,11 @@ class AthleteRepository(Protocol):
 class RoleRepository(Protocol):
     async def get_by_code(self, code: SystemRoleCode) -> Role | None: ...
 
+    async def list_active_codes_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[SystemRoleCode, ...]: ...
+
     async def assign_to_user(
         self,
         *,

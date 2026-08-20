@@ -92,6 +92,24 @@ class SqlAlchemyRoleRepository:
             is_active=model.is_active,
         )
 
+    async def list_active_codes_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[SystemRoleCode, ...]:
+        codes = await self._session.scalars(
+            select(RoleModel.code)
+            .join(UserRoleModel, UserRoleModel.role_id == RoleModel.id)
+            .where(
+                UserRoleModel.user_id == user_id,
+                RoleModel.is_system.is_(True),
+                RoleModel.is_active.is_(True),
+                RoleModel.code.in_(
+                    tuple(code.value for code in SystemRoleCode)
+                ),
+            )
+        )
+        return tuple(SystemRoleCode(code) for code in codes)
+
     async def assign_to_user(
         self,
         *,

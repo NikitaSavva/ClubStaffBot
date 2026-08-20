@@ -10,3 +10,14 @@ class RegisterBotUserResult:
     telegram_id: int
     role_code: SystemRoleCode
     registered_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MenuItem:
+    action_id: str
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class MenuContext:
+    items: tuple[MenuItem, ...]

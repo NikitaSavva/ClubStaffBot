@@ -11,3 +11,11 @@ class UserAlreadyRegisteredError(ApplicationError):
 
 class RequiredSystemRoleMissingError(ApplicationError):
     """A required system role is absent or incorrectly configured."""
+
+
+class UserNotFoundError(ApplicationError):
+    """No registered User exists for the supplied identity."""
+
+
+class UserHasNoRolesError(ApplicationError):
+    """The User has no active system roles that can provide a menu."""
