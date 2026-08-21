@@ -19,3 +19,15 @@ class UserNotFoundError(ApplicationError):
 
 class UserHasNoRolesError(ApplicationError):
     """The User has no active system roles that can provide a menu."""
+
+
+class AdministratorPermissionRequiredError(ApplicationError):
+    """The use case requires an active ADMINISTRATOR role."""
+
+
+class AthleteNotFoundError(ApplicationError):
+    """The requested Athlete does not exist."""
+
+
+class AthleteAlreadyLinkedError(ApplicationError):
+    """The Athlete is already linked to a User."""

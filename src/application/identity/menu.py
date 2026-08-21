@@ -15,6 +15,10 @@ _ROLE_MENU_ITEMS = {
             action_id="administrator.home",
             title="Меню администратора",
         ),
+        MenuItem(
+            action_id="administrator.link_athlete_account",
+            title="Связать аккаунт",
+        ),
     ),
     SystemRoleCode.TRAINER: (
         MenuItem(

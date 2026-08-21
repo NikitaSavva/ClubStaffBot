@@ -4,10 +4,13 @@ from aiogram.types import Message
 from dishka.integrations.aiogram import FromDishka, inject
 
 from application.identity import (
+    LinkAthleteAccountResult,
     RegisterBotUserCommand,
     RegisterBotUserInteractor,
 )
 from application.identity.errors import (
+    AthleteAlreadyLinkedError,
+    AthleteNotFoundError,
     InvalidBotInviteError,
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
@@ -19,6 +22,8 @@ REGISTRATION_UNAVAILABLE_TEXT = (
     "Сейчас не удалось завершить регистрацию. Обратитесь к администратору."
 )
 REGISTRATION_SUCCESS_TEXT = "Регистрация завершена."
+ACCOUNT_LINK_SUCCESS_TEXT = "Telegram-аккаунт связан со спортсменом."
+ATHLETE_ALREADY_LINKED_TEXT = "Спортсмен уже связан с Telegram-аккаунтом."
 
 
 @inject
@@ -34,7 +39,7 @@ async def handle_start(
         return
 
     try:
-        await interactor(
+        result = await interactor(
             RegisterBotUserCommand(
                 telegram_id=telegram_user.id,
                 username=telegram_user.username,
@@ -49,8 +54,17 @@ async def handle_start(
         await message.answer(ALREADY_REGISTERED_TEXT)
     except RequiredSystemRoleMissingError:
         await message.answer(REGISTRATION_UNAVAILABLE_TEXT)
+    except AthleteAlreadyLinkedError:
+        await message.answer(ATHLETE_ALREADY_LINKED_TEXT)
+    except AthleteNotFoundError:
+        await message.answer(INVALID_INVITE_TEXT)
     else:
-        await message.answer(REGISTRATION_SUCCESS_TEXT)
+        success_text = (
+            ACCOUNT_LINK_SUCCESS_TEXT
+            if isinstance(result, LinkAthleteAccountResult)
+            else REGISTRATION_SUCCESS_TEXT
+        )
+        await message.answer(success_text)
 
 
 def create_start_router() -> Router:

@@ -13,6 +13,15 @@ class UserRepository(Protocol):
 class AthleteRepository(Protocol):
     async def add(self, athlete: Athlete) -> int: ...
 
+    async def get_by_id_for_update(
+        self,
+        athlete_id: int,
+    ) -> Athlete | None: ...
+
+    async def list_unlinked(self) -> tuple[Athlete, ...]: ...
+
+    async def link_to_user(self, *, athlete_id: int, user_id: int) -> bool: ...
+
 
 class RoleRepository(Protocol):
     async def get_by_code(self, code: SystemRoleCode) -> Role | None: ...
@@ -35,6 +44,15 @@ class RoleRepository(Protocol):
 class BotInviteRepository(Protocol):
     async def get_by_token_hash(self, token_hash: str) -> BotInvite | None: ...
 
+    async def get_by_token_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> BotInvite | None: ...
+
+    async def add(self, invite: BotInvite) -> int: ...
+
+    async def consume(self, *, invite_id: int, consumed_at: datetime) -> bool: ...
+
 
 class AuditLogRepository(Protocol):
     async def add(
@@ -49,3 +67,7 @@ class AuditLogRepository(Protocol):
 
 class InviteTokenHasher(Protocol):
     def hash(self, raw_token: str) -> str: ...
+
+
+class InviteTokenGenerator(Protocol):
+    def generate(self) -> str: ...

@@ -6,12 +6,14 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from domain.identity import BotInvitePurpose
 from infrastructure.database.models import (
     AthleteModel,
     AttendanceModel,
     AttendanceSource,
     AttendanceStatus,
     Base,
+    BotInviteModel,
     NotificationModel,
     NotificationStatus,
     RoleModel,
@@ -229,6 +231,45 @@ async def test_multiple_athletes_without_users_are_allowed(
     assert first.athlete_public_id.version == 4
     assert second.athlete_public_id.version == 4
     assert first.athlete_public_id != second.athlete_public_id
+
+
+async def test_registration_invite_cannot_target_athlete(
+    db_session: AsyncSession,
+) -> None:
+    athlete = await add_athlete(db_session)
+    db_session.add(
+        BotInviteModel(
+            token_hash=f"registration-{uuid4()}",
+            purpose=BotInvitePurpose.REGISTRATION,
+            athlete_id=athlete.id,
+            is_active=True,
+            expires_at=None,
+            revoked_at=None,
+            consumed_at=None,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_athlete_link_invite_requires_athlete_target(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(
+        BotInviteModel(
+            token_hash=f"athlete-link-{uuid4()}",
+            purpose=BotInvitePurpose.ATHLETE_LINK,
+            athlete_id=None,
+            is_active=True,
+            expires_at=None,
+            revoked_at=None,
+            consumed_at=None,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
 
 
 async def test_user_role_pair_is_unique(db_session: AsyncSession) -> None:

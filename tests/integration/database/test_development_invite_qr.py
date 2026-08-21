@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from bootstrap.config import Settings
 from bootstrap.container import create_container
+from domain.identity import BotInvitePurpose
 from entrypoints import create_dev_invite
 from infrastructure.database.models import BotInviteModel
 from infrastructure.database.session import create_engine, create_session_factory
@@ -46,8 +47,8 @@ async def test_create_invite_qr_persists_only_hash_and_writes_correct_link(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            stored_hash = await session.scalar(
-                select(BotInviteModel.token_hash).where(
+            stored_invite = await session.scalar(
+                select(BotInviteModel).where(
                     BotInviteModel.token_hash == token_hash
                 )
             )
@@ -62,7 +63,11 @@ async def test_create_invite_qr_persists_only_hash_and_writes_correct_link(
     assert parsed_link.scheme == "https"
     assert parsed_link.netloc == "t.me"
     assert parsed_link.path == "/club_test_bot"
-    assert stored_hash == token_hash
+    assert stored_invite is not None
+    assert stored_invite.token_hash == token_hash
+    assert stored_invite.purpose is BotInvitePurpose.REGISTRATION
+    assert stored_invite.athlete_id is None
+    assert stored_invite.consumed_at is None
     assert raw_token_stored is None
     assert captured_links == [result.deep_link]
     assert result.qr_path == output_path

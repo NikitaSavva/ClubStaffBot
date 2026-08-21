@@ -4,13 +4,24 @@ from typing import Self
 
 import pytest
 
-from application.identity import RegisterBotUserCommand, RegisterBotUserInteractor
+from application.identity import (
+    LinkAthleteAccountResult,
+    RegisterBotUserCommand,
+    RegisterBotUserInteractor,
+)
 from application.identity.errors import (
     InvalidBotInviteError,
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
 )
-from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
+from domain.identity import (
+    Athlete,
+    BotInvite,
+    BotInvitePurpose,
+    Role,
+    SystemRoleCode,
+    User,
+)
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
@@ -139,13 +150,27 @@ class FakeAuditLogRepository:
         )
 
 
+class FakeLinkAthleteAccountInteractor:
+    def __init__(self, result: object | None = None) -> None:
+        self.result = result
+
+    async def __call__(self, command: object) -> object:
+        del command
+        if self.result is None:
+            raise AssertionError("Reception registration must not use link flow")
+        return self.result
+
+
 def active_invite(**overrides: object) -> BotInvite:
     values: dict[str, object] = {
         "id": 1,
         "token_hash": "hashed:raw-token",
+        "purpose": BotInvitePurpose.REGISTRATION,
+        "athlete_id": None,
         "is_active": True,
         "expires_at": None,
         "revoked_at": None,
+        "consumed_at": None,
     }
     values.update(overrides)
     return BotInvite(**values)  # type: ignore[arg-type]
@@ -191,6 +216,7 @@ def build_interactor(
     role: Role | None = None,
     user: User | None = None,
     athlete_error: BaseException | None = None,
+    link_result: object | None = None,
 ) -> tuple[
     RegisterBotUserInteractor,
     FakeUserRepository,
@@ -217,6 +243,9 @@ def build_interactor(
         unit_of_work=uow,
         clock=FrozenClock(),
         token_hasher=FakeTokenHasher(),
+        link_athlete_account_interactor=FakeLinkAthleteAccountInteractor(
+            link_result
+        ),  # type: ignore[arg-type]
     )
     return interactor, users, athletes, roles, invites, audit_log, uow
 
@@ -380,3 +409,29 @@ async def test_athlete_failure_does_not_audit_or_commit() -> None:
     assert audit_log.records == []
     assert uow.commit_count == 0
     assert uow.exit_exception is RuntimeError
+
+
+async def test_account_link_invite_is_routed_to_link_interactor() -> None:
+    link_result = LinkAthleteAccountResult(
+        user_id=101,
+        athlete_id=201,
+        telegram_id=123456,
+        role_code=SystemRoleCode.ATHLETE,
+        linked_at=NOW,
+    )
+    interactor, users, athletes, roles, _, audit_log, uow = build_interactor(
+        invite=active_invite(
+            purpose=BotInvitePurpose.ATHLETE_LINK,
+            athlete_id=201,
+        ),
+        link_result=link_result,
+    )
+
+    result = await interactor(command())
+
+    assert result is link_result
+    assert users.added == []
+    assert athletes.added == []
+    assert roles.assignments == []
+    assert audit_log.records == []
+    assert uow.commit_count == 0

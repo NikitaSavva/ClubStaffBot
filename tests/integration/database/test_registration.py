@@ -4,8 +4,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.identity import RegisterBotUserCommand, RegisterBotUserInteractor
+from application.identity import (
+    LinkAthleteAccountInteractor,
+    RegisterBotUserCommand,
+    RegisterBotUserInteractor,
+)
 from application.identity.errors import UserAlreadyRegisteredError
 from domain.identity import Athlete, SystemRoleCode, User
 from infrastructure.database.development_invites import create_development_invite
@@ -41,6 +46,22 @@ class FailingAthleteRepository:
     async def add(self, athlete: Athlete) -> int:
         del athlete
         raise RuntimeError("athlete persistence failed")
+
+
+def build_link_interactor(
+    session: AsyncSession,
+    hasher: Sha256InviteTokenHasher,
+) -> LinkAthleteAccountInteractor:
+    return LinkAthleteAccountInteractor(
+        user_repository=SqlAlchemyUserRepository(session),
+        athlete_repository=SqlAlchemyAthleteRepository(session),
+        role_repository=SqlAlchemyRoleRepository(session),
+        bot_invite_repository=SqlAlchemyBotInviteRepository(session),
+        audit_log_repository=SqlAlchemyAuditLogRepository(session),
+        unit_of_work=SqlAlchemyUnitOfWork(session),
+        clock=FrozenClock(),
+        token_hasher=hasher,
+    )
 
 
 async def test_system_role_bootstrap_is_idempotent(database_url: str) -> None:
@@ -102,6 +123,10 @@ async def test_development_invite_registers_user_in_one_transaction(
                 unit_of_work=SqlAlchemyUnitOfWork(session),
                 clock=FrozenClock(),
                 token_hasher=hasher,
+                link_athlete_account_interactor=build_link_interactor(
+                    session,
+                    hasher,
+                ),
             )
             result = await interactor(
                 RegisterBotUserCommand(
@@ -155,6 +180,10 @@ async def test_development_invite_registers_user_in_one_transaction(
                 unit_of_work=SqlAlchemyUnitOfWork(session),
                 clock=FrozenClock(),
                 token_hasher=hasher,
+                link_athlete_account_interactor=build_link_interactor(
+                    session,
+                    hasher,
+                ),
             )
             with pytest.raises(UserAlreadyRegisteredError):
                 await duplicate_interactor(
@@ -257,6 +286,10 @@ async def test_registration_rolls_back_when_athlete_creation_fails(
                 unit_of_work=SqlAlchemyUnitOfWork(session),
                 clock=FrozenClock(),
                 token_hasher=hasher,
+                link_athlete_account_interactor=build_link_interactor(
+                    session,
+                    hasher,
+                ),
             )
             with pytest.raises(
                 RuntimeError,
