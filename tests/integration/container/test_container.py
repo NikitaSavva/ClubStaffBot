@@ -36,6 +36,7 @@ from infrastructure.database.repositories import (
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
+from presentation.telegram.screen import TelegramScreenRenderer
 
 
 @pytest.fixture
@@ -51,6 +52,10 @@ def settings() -> Settings:
         redis_db=0,
         telegram_bot_token="123456789:test-token",
         telegram_owner_id=987654321,
+        admin_panel_banner_file_id="admin-banner-file-id",
+        trainer_panel_banner_file_id="trainer-banner-file-id",
+        athlete_panel_banner_file_id="athlete-banner-file-id",
+        role_selector_banner_file_id="role-selector-banner-file-id",
         _env_file=None,
     )
 
@@ -68,6 +73,7 @@ async def test_container_resolves_app_and_request_dependencies(
         engine = await container.get(AsyncEngine)
         session_factory = await container.get(async_sessionmaker[AsyncSession])
         redis = await container.get(Redis)
+        screen_renderer = await container.get(TelegramScreenRenderer)
 
         async with container() as request_container:
             first_session = await request_container.get(AsyncSession)
@@ -186,6 +192,7 @@ async def test_container_resolves_app_and_request_dependencies(
         assert resolved_settings is settings
         assert session_factory.kw["bind"] is engine
         assert redis.connection_pool.connection_kwargs["host"] == "cache"
+        assert screen_renderer._bot.id == 123456789
         close_session.assert_awaited_once()
         dispose.assert_awaited_once()
         close_redis.assert_awaited_once()

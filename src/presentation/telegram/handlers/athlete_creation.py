@@ -1,7 +1,7 @@
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from dishka.integrations.aiogram import FromDishka, inject
 
 from application.athletes import (
@@ -14,16 +14,29 @@ from application.identity.errors import (
     UserNotFoundError,
 )
 from domain.identity import AthleteFirstNameRequiredError
-from presentation.telegram.handlers.menu import show_root_menu
+from presentation.telegram.handlers.menu import show_active_role_panel
+from presentation.telegram.keyboards.layout import build_inline_keyboard
 from presentation.telegram.navigation import (
     NavigationAction,
     NavigationCallback,
     NavigationTarget,
     build_cancel_button,
     build_menu_button,
-    build_single_button_keyboard,
+)
+from presentation.telegram.presenters import RolePanel
+from presentation.telegram.screen import (
+    BannerContext,
+    TelegramScreen,
+    TelegramScreenRenderer,
 )
 from presentation.telegram.states import CreateAthleteStates
+from presentation.telegram.ui_context import (
+    NavigationContext,
+    RootScreen,
+    clear_flow_context,
+    set_flow_context,
+    set_navigation_context,
+)
 
 CREATE_ATHLETE_ACTION = "administrator.create_athlete"
 ENTER_FIRST_NAME_TEXT = "Введите имя спортсмена без фамилии."
@@ -35,20 +48,28 @@ CREATE_ATHLETE_PERMISSION_DENIED_TEXT = (
 CREATE_ATHLETE_SUCCESS_TEXT = "Спортсмен {first_name} создан."
 
 
+@inject
 async def handle_begin_create_athlete(
     callback: CallbackQuery,
     state: FSMContext,
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
 
-    await state.clear()
+    await _set_admin_navigation(state)
+    await set_flow_context(state, {})
     await state.set_state(CreateAthleteStates.waiting_for_first_name)
-    await message.answer(
-        ENTER_FIRST_NAME_TEXT,
-        reply_markup=build_single_button_keyboard(build_cancel_button()),
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=_admin_screen(
+            ENTER_FIRST_NAME_TEXT,
+            build_inline_keyboard((build_cancel_button(),)),
+        ),
+        editable_message=message,
     )
 
 
@@ -57,6 +78,7 @@ async def handle_cancel_create_athlete(
     message: Message,
     state: FSMContext,
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
     await _cancel_create_athlete(
@@ -64,6 +86,8 @@ async def handle_cancel_create_athlete(
         state=state,
         telegram_id=telegram_user.id if telegram_user is not None else None,
         menu_interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=None,
     )
 
 
@@ -72,6 +96,7 @@ async def handle_cancel_create_athlete_callback(
     callback: CallbackQuery,
     state: FSMContext,
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -83,6 +108,8 @@ async def handle_cancel_create_athlete_callback(
         state=state,
         telegram_id=callback.from_user.id,
         menu_interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=message,
     )
 
 
@@ -91,14 +118,17 @@ async def handle_create_athlete_first_name(
     message: Message,
     state: FSMContext,
     interactor: FromDishka[CreateManualAthleteInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
     first_name = message.text.strip() if message.text is not None else ""
     if telegram_user is None or not first_name:
-        await message.answer(
-            INVALID_FIRST_NAME_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_cancel_button()
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                INVALID_FIRST_NAME_TEXT,
+                build_inline_keyboard((build_cancel_button(),)),
             ),
         )
         return
@@ -111,25 +141,35 @@ async def handle_create_athlete_first_name(
             )
         )
     except AthleteFirstNameRequiredError:
-        await message.answer(
-            INVALID_FIRST_NAME_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_cancel_button()
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                INVALID_FIRST_NAME_TEXT,
+                build_inline_keyboard((build_cancel_button(),)),
             ),
         )
         return
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await state.clear()
-        await message.answer(
-            CREATE_ATHLETE_PERMISSION_DENIED_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
+        await clear_flow_context(state)
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                CREATE_ATHLETE_PERMISSION_DENIED_TEXT,
+                build_inline_keyboard((build_menu_button(),)),
+            ),
         )
         return
 
-    await state.clear()
-    await message.answer(
-        CREATE_ATHLETE_SUCCESS_TEXT.format(first_name=result.first_name),
-        reply_markup=build_single_button_keyboard(build_menu_button()),
+    await clear_flow_context(state)
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=_admin_screen(
+            CREATE_ATHLETE_SUCCESS_TEXT.format(first_name=result.first_name),
+            build_inline_keyboard((build_menu_button(),)),
+        ),
     )
 
 
@@ -139,15 +179,27 @@ async def _cancel_create_athlete(
     state: FSMContext,
     telegram_id: int | None,
     menu_interactor: GetUserMenuContextInteractor,
+    renderer: TelegramScreenRenderer,
+    editable_message: Message | None,
 ) -> None:
-    await state.clear()
-    await message.answer(CREATE_ATHLETE_CANCELLED_TEXT)
-    if telegram_id is not None:
-        await show_root_menu(
-            message=message,
-            telegram_id=telegram_id,
-            interactor=menu_interactor,
+    await clear_flow_context(state)
+    if telegram_id is None:
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(CREATE_ATHLETE_CANCELLED_TEXT, None),
+            editable_message=editable_message,
         )
+        return
+    await show_active_role_panel(
+        chat_id=message.chat.id,
+        telegram_id=telegram_id,
+        state=state,
+        interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=editable_message,
+        notice=CREATE_ATHLETE_CANCELLED_TEXT,
+    )
 
 
 def create_athlete_creation_router() -> Router:
@@ -165,7 +217,7 @@ def create_athlete_creation_router() -> Router:
         handle_cancel_create_athlete_callback,
         NavigationCallback.filter(
             (F.action == NavigationAction.CANCEL)
-            & (F.target == NavigationTarget.MENU)
+            & (F.target == NavigationTarget.ROLE_PANEL)
         ),
         CreateAthleteStates.waiting_for_first_name,
     )
@@ -174,3 +226,24 @@ def create_athlete_creation_router() -> Router:
         CreateAthleteStates.waiting_for_first_name,
     )
     return router
+
+
+async def _set_admin_navigation(state: FSMContext) -> None:
+    await set_navigation_context(
+        state,
+        NavigationContext(
+            root_screen=RootScreen.ROLE_PANEL,
+            active_role=RolePanel.ADMINISTRATOR.value,
+        ),
+    )
+
+
+def _admin_screen(
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> TelegramScreen:
+    return TelegramScreen(
+        text=text,
+        reply_markup=reply_markup,
+        banner=BannerContext.ADMIN_PANEL,
+    )

@@ -3,9 +3,14 @@ from enum import StrEnum
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from presentation.telegram.keyboards.layout import (
+    build_callback_button,
+    build_inline_keyboard,
+)
+
 BACK_BUTTON_TEXT = "← Назад"
 CANCEL_BUTTON_TEXT = "Отмена"
-MENU_BUTTON_TEXT = "В меню"
+MENU_BUTTON_TEXT = "В панель"
 
 
 class NavigationAction(StrEnum):
@@ -15,6 +20,8 @@ class NavigationAction(StrEnum):
 
 class NavigationTarget(StrEnum):
     MENU = "menu"
+    ROLE_SELECTOR = "role_selector"
+    ROLE_PANEL = "role_panel"
     USERS_LIST = "users"
     USER_PROFILE = "user"
     ATHLETE_LINK_LIST = "athlete_link"
@@ -39,11 +46,13 @@ def build_back_button(
     )
 
 
-def build_cancel_button() -> InlineKeyboardButton:
+def build_cancel_button(
+    target: NavigationTarget = NavigationTarget.ROLE_PANEL,
+) -> InlineKeyboardButton:
     return _build_navigation_button(
         text=CANCEL_BUTTON_TEXT,
         action=NavigationAction.CANCEL,
-        target=NavigationTarget.MENU,
+        target=target,
     )
 
 
@@ -51,14 +60,14 @@ def build_menu_button() -> InlineKeyboardButton:
     return _build_navigation_button(
         text=MENU_BUTTON_TEXT,
         action=NavigationAction.BACK,
-        target=NavigationTarget.MENU,
+        target=NavigationTarget.ROLE_PANEL,
     )
 
 
 def build_single_button_keyboard(
     button: InlineKeyboardButton,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[button]])
+    return build_inline_keyboard((button,))
 
 
 def _build_navigation_button(
@@ -68,7 +77,7 @@ def _build_navigation_button(
     target: NavigationTarget,
     target_id: int | None = None,
 ) -> InlineKeyboardButton:
-    return InlineKeyboardButton(
+    return build_callback_button(
         text=text,
         callback_data=NavigationCallback(
             action=action,

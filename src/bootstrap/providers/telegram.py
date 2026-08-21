@@ -4,6 +4,7 @@ from aiogram import Bot
 from dishka import Provider, Scope, provide
 
 from bootstrap.config import Settings
+from presentation.telegram.screen import BannerFileIds, TelegramScreenRenderer
 
 
 class TelegramProvider(Provider):
@@ -14,3 +15,19 @@ class TelegramProvider(Provider):
             yield bot
         finally:
             await bot.session.close()
+
+    @provide(scope=Scope.APP)
+    def provide_screen_renderer(
+        self,
+        bot: Bot,
+        settings: Settings,
+    ) -> TelegramScreenRenderer:
+        return TelegramScreenRenderer(
+            bot=bot,
+            banner_file_ids=BannerFileIds(
+                role_selector=settings.role_selector_banner_file_id,
+                admin_panel=settings.admin_panel_banner_file_id,
+                trainer_panel=settings.trainer_panel_banner_file_id,
+                athlete_panel=settings.athlete_panel_banner_file_id,
+            ),
+        )

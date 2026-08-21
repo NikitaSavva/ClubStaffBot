@@ -67,5 +67,9 @@ def integration_settings(database_url: str) -> Settings:
         redis_db=0,
         telegram_bot_token="123456789:test-token",
         telegram_owner_id=987654321,
+        admin_panel_banner_file_id="admin-banner-file-id",
+        trainer_panel_banner_file_id="trainer-banner-file-id",
+        athlete_panel_banner_file_id="athlete-banner-file-id",
+        role_selector_banner_file_id="role-selector-banner-file-id",
         _env_file=None,
     )

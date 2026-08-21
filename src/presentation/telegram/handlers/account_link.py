@@ -1,8 +1,8 @@
 from aiogram import Bot, F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
 )
@@ -21,15 +21,30 @@ from application.identity.errors import (
     AthleteNotFoundError,
     UserNotFoundError,
 )
+from presentation.telegram.keyboards.layout import (
+    build_callback_button,
+    build_inline_keyboard,
+)
 from presentation.telegram.navigation import (
     NavigationAction,
     NavigationCallback,
     NavigationTarget,
     build_back_button,
     build_menu_button,
-    build_single_button_keyboard,
 )
+from presentation.telegram.presenters import RolePanel
 from presentation.telegram.qr import build_bot_start_deep_link, generate_qr_png
+from presentation.telegram.screen import (
+    BannerContext,
+    TelegramScreen,
+    TelegramScreenRenderer,
+)
+from presentation.telegram.ui_context import (
+    NavigationContext,
+    RootScreen,
+    set_flow_context,
+    set_navigation_context,
+)
 
 LINK_ACCOUNT_ACTION = "administrator.link_athlete_account"
 SELECT_ATHLETE_PREFIX = "athlete_link.select:"
@@ -44,26 +59,27 @@ INVITE_CAPTION = "Отсканируйте QR новым Telegram-аккаунт
 def build_athlete_selection_keyboard(
     athletes: tuple[UnlinkedAthlete, ...],
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=athlete.full_name,
-                    callback_data=(
-                        f"{SELECT_ATHLETE_PREFIX}{athlete.athlete_id}"
-                    ),
-                )
-            ]
-            for athlete in athletes
-        ]
-        + [[build_back_button(NavigationTarget.MENU)]]
+    athlete_rows = tuple(
+        (
+            build_callback_button(
+                text=athlete.full_name,
+                callback_data=f"{SELECT_ATHLETE_PREFIX}{athlete.athlete_id}",
+            ),
+        )
+        for athlete in athletes
+    )
+    return build_inline_keyboard(
+        *athlete_rows,
+        (build_back_button(NavigationTarget.ROLE_PANEL),),
     )
 
 
 @inject
 async def handle_list_unlinked_athletes(
     callback: CallbackQuery,
+    state: FSMContext,
     interactor: FromDishka[ListUnlinkedAthletesInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -77,31 +93,48 @@ async def handle_list_unlinked_athletes(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await message.answer(
-            LINK_PERMISSION_DENIED_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
+        await _set_admin_navigation(state)
+        await set_flow_context(state, {})
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                LINK_PERMISSION_DENIED_TEXT,
+                build_inline_keyboard((build_menu_button(),)),
+            ),
+            editable_message=message,
         )
         return
 
+    await _set_admin_navigation(state)
+    await set_flow_context(state, {})
     if not athletes:
-        await message.answer(
+        screen = _admin_screen(
             NO_UNLINKED_ATHLETES_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_back_button(NavigationTarget.MENU)
+            build_inline_keyboard(
+                (build_back_button(NavigationTarget.ROLE_PANEL),)
             ),
         )
-        return
-    await message.answer(
-        SELECT_ATHLETE_TEXT,
-        reply_markup=build_athlete_selection_keyboard(athletes),
+    else:
+        screen = _admin_screen(
+            SELECT_ATHLETE_TEXT,
+            build_athlete_selection_keyboard(athletes),
+        )
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=screen,
+        editable_message=message,
     )
 
 
 @inject
 async def handle_create_athlete_account_link_invite(
     callback: CallbackQuery,
+    state: FSMContext,
     bot: Bot,
     interactor: FromDishka[CreateAthleteAccountLinkInviteInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -111,18 +144,12 @@ async def handle_create_athlete_account_link_invite(
     try:
         athlete_id = int(callback.data.removeprefix(SELECT_ATHLETE_PREFIX))
     except ValueError:
-        await message.answer(
-            CALLBACK_UNAVAILABLE_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
-        )
+        await _render_callback_unavailable(message, state, renderer)
         return
 
     bot_user = await bot.get_me()
     if bot_user.username is None:
-        await message.answer(
-            CALLBACK_UNAVAILABLE_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
-        )
+        await _render_callback_unavailable(message, state, renderer)
         return
 
     try:
@@ -133,17 +160,31 @@ async def handle_create_athlete_account_link_invite(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await message.answer(
-            LINK_PERMISSION_DENIED_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
+        await _set_admin_navigation(state)
+        await set_flow_context(state, {})
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                LINK_PERMISSION_DENIED_TEXT,
+                build_inline_keyboard((build_menu_button(),)),
+            ),
+            editable_message=message,
         )
         return
     except (AthleteAlreadyLinkedError, AthleteNotFoundError):
-        await message.answer(
-            ATHLETE_UNAVAILABLE_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_back_button(NavigationTarget.ATHLETE_LINK_LIST)
+        await _set_admin_navigation(state)
+        await set_flow_context(state, {})
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                ATHLETE_UNAVAILABLE_TEXT,
+                build_inline_keyboard(
+                    (build_back_button(NavigationTarget.ATHLETE_LINK_LIST),)
+                ),
             ),
+            editable_message=message,
         )
         return
 
@@ -152,10 +193,29 @@ async def handle_create_athlete_account_link_invite(
         bot_user.username,
     )
     qr_png = generate_qr_png(deep_link)
-    await message.answer_photo(
-        BufferedInputFile(qr_png, filename="athlete-account-link.png"),
-        caption=INVITE_CAPTION.format(deep_link=deep_link),
-        reply_markup=build_single_button_keyboard(build_menu_button()),
+    await _set_admin_navigation(state)
+    await set_flow_context(
+        state,
+        {
+            "selected_athlete_id": athlete_id,
+            "invite_id": result.invite_id,
+        },
+    )
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=TelegramScreen(
+            text=INVITE_CAPTION.format(deep_link=deep_link),
+            media=BufferedInputFile(
+                qr_png,
+                filename="athlete-account-link.png",
+            ),
+            media_key=f"athlete-account-link:{result.invite_id}",
+            reply_markup=build_inline_keyboard(
+                (build_back_button(NavigationTarget.ATHLETE_LINK_LIST),)
+            ),
+        ),
+        editable_message=message,
     )
 
 
@@ -177,3 +237,42 @@ def create_account_link_router() -> Router:
         F.data.startswith(SELECT_ATHLETE_PREFIX),
     )
     return router
+
+
+async def _set_admin_navigation(state: FSMContext) -> None:
+    await set_navigation_context(
+        state,
+        NavigationContext(
+            root_screen=RootScreen.ROLE_PANEL,
+            active_role=RolePanel.ADMINISTRATOR.value,
+        ),
+    )
+
+
+async def _render_callback_unavailable(
+    message: Message,
+    state: FSMContext,
+    renderer: TelegramScreenRenderer,
+) -> None:
+    await _set_admin_navigation(state)
+    await set_flow_context(state, {})
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=_admin_screen(
+            CALLBACK_UNAVAILABLE_TEXT,
+            build_inline_keyboard((build_menu_button(),)),
+        ),
+        editable_message=message,
+    )
+
+
+def _admin_screen(
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> TelegramScreen:
+    return TelegramScreen(
+        text=text,
+        reply_markup=reply_markup,
+        banner=BannerContext.ADMIN_PANEL,
+    )

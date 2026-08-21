@@ -1,3 +1,11 @@
-from presentation.telegram.keyboards.menu import build_menu_keyboard
+from presentation.telegram.keyboards.layout import (
+    build_callback_button,
+    build_inline_keyboard,
+    build_web_app_button,
+)
 
-__all__ = ["build_menu_keyboard"]
+__all__ = [
+    "build_callback_button",
+    "build_inline_keyboard",
+    "build_web_app_button",
+]
