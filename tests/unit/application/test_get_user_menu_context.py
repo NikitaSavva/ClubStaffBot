@@ -83,6 +83,10 @@ def build_interactor(
                     title="Меню администратора",
                 ),
                 MenuItem(
+                    action_id="administrator.create_athlete",
+                    title="Добавить спортсмена",
+                ),
+                MenuItem(
                     action_id="administrator.link_athlete_account",
                     title="Связать аккаунт",
                 ),
@@ -137,6 +141,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
 
     assert [item.action_id for item in result.items] == [
         "administrator.home",
+        "administrator.create_athlete",
         "administrator.link_athlete_account",
         "trainer.home",
         "athlete.home",

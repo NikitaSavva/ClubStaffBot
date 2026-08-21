@@ -6,9 +6,11 @@ from domain.identity.entities import (
     SystemRoleCode,
     User,
 )
+from domain.identity.errors import AthleteFirstNameRequiredError
 
 __all__ = [
     "Athlete",
+    "AthleteFirstNameRequiredError",
     "BotInvite",
     "BotInvitePurpose",
     "Role",

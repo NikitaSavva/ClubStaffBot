@@ -4,6 +4,8 @@ from enum import StrEnum
 from typing import Self
 from uuid import UUID, uuid4
 
+from domain.identity.errors import AthleteFirstNameRequiredError
+
 
 class SystemRoleCode(StrEnum):
     ATHLETE = "ATHLETE"
@@ -37,6 +39,21 @@ class Athlete:
     last_name: str | None
     phone: str | None
     is_active: bool
+
+    @classmethod
+    def create_manually(cls, *, first_name: str) -> Self:
+        normalized_first_name = first_name.strip()
+        if not normalized_first_name:
+            raise AthleteFirstNameRequiredError
+        return cls(
+            id=None,
+            athlete_public_id=uuid4(),
+            user_id=None,
+            first_name=normalized_first_name,
+            last_name=None,
+            phone=None,
+            is_active=True,
+        )
 
     @classmethod
     def create_for_registered_user(

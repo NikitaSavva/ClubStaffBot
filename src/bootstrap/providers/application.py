@@ -1,5 +1,6 @@
 from dishka import Provider, Scope, provide
 
+from application.athletes import CreateManualAthleteInteractor
 from application.common import Clock, UnitOfWork
 from application.identity.account_link import (
     CreateAthleteAccountLinkInviteInteractor,
@@ -22,6 +23,23 @@ from application.identity.ports import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_create_manual_athlete_interactor(
+        self,
+        user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
+        role_repository: RoleRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+    ) -> CreateManualAthleteInteractor:
+        return CreateManualAthleteInteractor(
+            user_repository=user_repository,
+            athlete_repository=athlete_repository,
+            role_repository=role_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_list_unlinked_athletes_interactor(
         self,
