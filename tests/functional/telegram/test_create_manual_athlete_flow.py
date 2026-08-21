@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import SendMessage, TelegramMethod
 from aiogram.types import (
     CallbackQuery,
@@ -36,6 +37,13 @@ from presentation.telegram.handlers.athlete_creation import (
     CREATE_ATHLETE_SUCCESS_TEXT,
     ENTER_FIRST_NAME_TEXT,
     INVALID_FIRST_NAME_TEXT,
+)
+from presentation.telegram.handlers.menu import MENU_TEXT
+from presentation.telegram.navigation import (
+    CANCEL_BUTTON_TEXT,
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
 )
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
@@ -79,6 +87,7 @@ def callback_update(
     *,
     update_id: int,
     sender: User,
+    data: str = CREATE_ATHLETE_ACTION,
 ) -> Update:
     return Update(
         update_id=update_id,
@@ -86,7 +95,7 @@ def callback_update(
             id=f"callback-{update_id}",
             from_user=sender,
             chat_instance=f"chat-{sender.id}",
-            data=CREATE_ATHLETE_ACTION,
+            data=data,
             message=Message(
                 message_id=update_id,
                 date=NOW,
@@ -283,9 +292,52 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
             bot,
             callback_update(update_id=1, sender=sender),
         )
+        form_message = next(
+            method
+            for method in reversed(sent_methods)
+            if isinstance(method, SendMessage)
+            and isinstance(method.reply_markup, InlineKeyboardMarkup)
+        )
+        cancel_callback = NavigationCallback(
+            action=NavigationAction.CANCEL,
+            target=NavigationTarget.MENU,
+        ).pack()
+        cancel_button = next(
+            button
+            for row in form_message.reply_markup.inline_keyboard
+            for button in row
+            if button.callback_data == cancel_callback
+        )
+        assert cancel_button.text == CANCEL_BUTTON_TEXT
+
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=2, sender=sender, text="/cancel"),
+            message_update(update_id=2, sender=sender, text="   "),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                sender=sender,
+                data=cancel_callback,
+            ),
+        )
+
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=sender.id,
+            user_id=sender.id,
+        )
+        assert await dispatcher.storage.get_state(storage_key) is None
+        assert await dispatcher.storage.get_data(storage_key) == {}
+
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=4,
+                sender=sender,
+                text="ShouldNotBecomeAthlete",
+            ),
         )
 
         async with session_factory() as session:
@@ -301,6 +353,7 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
                 )
             )
         assert CREATE_ATHLETE_CANCELLED_TEXT in sent_texts(sent_methods)
+        assert MENU_TEXT in sent_texts(sent_methods)
         assert athlete_count_after == athlete_count_before
         assert audit_count == 0
     finally:
