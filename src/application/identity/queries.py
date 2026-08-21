@@ -9,3 +9,9 @@ class GetUserMenuContextQuery:
 @dataclass(frozen=True, slots=True)
 class ListUnlinkedAthletesQuery:
     actor_telegram_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class SearchBotUsersQuery:
+    actor_telegram_id: int
+    query: str

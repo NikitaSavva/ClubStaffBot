@@ -6,9 +6,11 @@ from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
+    BotUserReader,
     RoleRepository,
     UserRepository,
 )
+from infrastructure.database.readers import SqlAlchemyBotUserReader
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
@@ -20,6 +22,13 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_bot_user_reader(
+        self,
+        session: AsyncSession,
+    ) -> BotUserReader:
+        return SqlAlchemyBotUserReader(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_athlete_repository(
         self,

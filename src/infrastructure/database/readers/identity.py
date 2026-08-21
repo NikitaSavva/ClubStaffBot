@@ -1,0 +1,112 @@
+from dataclasses import dataclass
+
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from application.identity.dto import BotUserSummary
+from domain.identity import SystemRoleCode
+from infrastructure.database.models import (
+    RoleModel,
+    UserModel,
+    UserRoleModel,
+)
+
+
+@dataclass(slots=True)
+class _UserRow:
+    user_id: int
+    first_name: str
+    last_name: str
+    username: str | None
+    role_codes: set[SystemRoleCode]
+
+
+class SqlAlchemyBotUserReader:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def search(self, query: str) -> tuple[BotUserSummary, ...]:
+        statement = (
+            select(
+                UserModel.id,
+                UserModel.first_name,
+                UserModel.last_name,
+                UserModel.username,
+                RoleModel.code,
+            )
+            .select_from(UserModel)
+            .outerjoin(
+                UserRoleModel,
+                UserRoleModel.user_id == UserModel.id,
+            )
+            .outerjoin(
+                RoleModel,
+                and_(
+                    RoleModel.id == UserRoleModel.role_id,
+                    RoleModel.is_system.is_(True),
+                    RoleModel.is_active.is_(True),
+                    RoleModel.code.in_(
+                        tuple(code.value for code in SystemRoleCode)
+                    ),
+                ),
+            )
+            .order_by(
+                UserModel.last_name.asc(),
+                UserModel.first_name.asc(),
+                UserModel.id.asc(),
+            )
+        )
+        if query:
+            pattern = _contains_pattern(query)
+            statement = statement.where(
+                or_(
+                    UserModel.first_name.ilike(pattern, escape="\\"),
+                    UserModel.last_name.ilike(pattern, escape="\\"),
+                    UserModel.username.ilike(pattern, escape="\\"),
+                    func.concat_ws(
+                        " ",
+                        UserModel.first_name,
+                        UserModel.last_name,
+                    ).ilike(pattern, escape="\\"),
+                )
+            )
+
+        rows = (await self._session.execute(statement)).all()
+        users: dict[int, _UserRow] = {}
+        for user_id, first_name, last_name, username, role_code in rows:
+            user = users.setdefault(
+                user_id,
+                _UserRow(
+                    user_id=user_id,
+                    first_name=first_name,
+                    last_name=last_name,
+                    username=username,
+                    role_codes=set(),
+                ),
+            )
+            if role_code is not None:
+                user.role_codes.add(SystemRoleCode(role_code))
+
+        return tuple(
+            BotUserSummary(
+                user_id=user.user_id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
+                role_codes=tuple(
+                    code
+                    for code in SystemRoleCode
+                    if code in user.role_codes
+                ),
+            )
+            for user in users.values()
+        )
+
+
+def _contains_pattern(query: str) -> str:
+    escaped = (
+        query.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return f"%{escaped}%"

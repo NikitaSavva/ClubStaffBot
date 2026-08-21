@@ -7,16 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from application.athletes import CreateManualAthleteInteractor
 from application.common import UnitOfWork
 from application.identity import (
+    AssignUserRoleInteractor,
     CreateAthleteAccountLinkInviteInteractor,
     GetUserMenuContextInteractor,
     LinkAthleteAccountInteractor,
     ListUnlinkedAthletesInteractor,
     RegisterBotUserInteractor,
+    SearchBotUsersInteractor,
 )
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
+    BotUserReader,
     InviteTokenGenerator,
     InviteTokenHasher,
     RoleRepository,
@@ -24,6 +27,7 @@ from application.identity.ports import (
 )
 from bootstrap.config import Settings
 from bootstrap.container import create_container
+from infrastructure.database.readers import SqlAlchemyBotUserReader
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
@@ -75,6 +79,7 @@ async def test_container_resolves_app_and_request_dependencies(
             invite_repository = await request_container.get(
                 BotInviteRepository
             )
+            bot_user_reader = await request_container.get(BotUserReader)
             audit_repository = await request_container.get(
                 AuditLogRepository
             )
@@ -97,11 +102,18 @@ async def test_container_resolves_app_and_request_dependencies(
             link_account_interactor = await request_container.get(
                 LinkAthleteAccountInteractor
             )
+            search_bot_users_interactor = await request_container.get(
+                SearchBotUsersInteractor
+            )
+            assign_user_role_interactor = await request_container.get(
+                AssignUserRoleInteractor
+            )
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
             assert isinstance(role_repository, SqlAlchemyRoleRepository)
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
+            assert isinstance(bot_user_reader, SqlAlchemyBotUserReader)
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
             assert isinstance(
@@ -125,10 +137,19 @@ async def test_container_resolves_app_and_request_dependencies(
                 link_account_interactor,
                 LinkAthleteAccountInteractor,
             )
+            assert isinstance(
+                search_bot_users_interactor,
+                SearchBotUsersInteractor,
+            )
+            assert isinstance(
+                assign_user_role_interactor,
+                AssignUserRoleInteractor,
+            )
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
             assert invite_repository._session is first_session
+            assert bot_user_reader._session is first_session
             assert audit_repository._session is first_session
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository
@@ -147,6 +168,12 @@ async def test_container_resolves_app_and_request_dependencies(
             assert link_account_interactor._invites is invite_repository
             assert registration_interactor._link_athlete_account is (
                 link_account_interactor
+            )
+            assert search_bot_users_interactor._reader is bot_user_reader
+            assert assign_user_role_interactor._users is user_repository
+            assert assign_user_role_interactor._roles is role_repository
+            assert (
+                assign_user_role_interactor._audit_log is audit_repository
             )
 
         token_hasher = await container.get(InviteTokenHasher)

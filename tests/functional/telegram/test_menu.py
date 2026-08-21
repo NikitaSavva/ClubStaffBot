@@ -93,6 +93,10 @@ async def add_user_with_role(
                     "Связать аккаунт",
                     "administrator.link_athlete_account",
                 ),
+                (
+                    "Пользователи",
+                    "administrator.manage_users",
+                ),
             ),
         ),
         (
