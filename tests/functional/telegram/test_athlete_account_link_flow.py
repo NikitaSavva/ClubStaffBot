@@ -40,9 +40,16 @@ from presentation.telegram.handlers.account_link import (
     LINK_ACCOUNT_ACTION,
     SELECT_ATHLETE_PREFIX,
 )
+from presentation.telegram.handlers.menu import MENU_TEXT
 from presentation.telegram.handlers.start import (
     ACCOUNT_LINK_SUCCESS_TEXT,
     INVALID_INVITE_TEXT,
+)
+from presentation.telegram.navigation import (
+    BACK_BUTTON_TEXT,
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
 )
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
@@ -236,10 +243,51 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
             f"{SELECT_ATHLETE_PREFIX}{athlete_id}"
         )
 
+        back_to_menu = NavigationCallback(
+            action=NavigationAction.BACK,
+            target=NavigationTarget.MENU,
+        ).pack()
+        back_button = next(
+            button
+            for row in athlete_list_method.reply_markup.inline_keyboard
+            for button in row
+            if button.callback_data == back_to_menu
+        )
+        assert back_button.text == BACK_BUTTON_TEXT
+
         await dispatcher.feed_update(
             bot,
             callback_update(
                 update_id=3,
+                sender=admin,
+                data=back_to_menu,
+            ),
+        )
+        returned_menu = next(
+            method
+            for method in reversed(sent_methods)
+            if isinstance(method, SendMessage)
+        )
+        assert returned_menu.text == MENU_TEXT
+        async with session_factory() as session:
+            invite_count_before_selection = await session.scalar(
+                select(func.count()).select_from(BotInviteModel)
+            )
+        assert invite_count_before_selection == 0
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                sender=admin,
+                data=LINK_ACCOUNT_ACTION,
+            ),
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=5,
                 sender=admin,
                 data=f"{SELECT_ATHLETE_PREFIX}{athlete_id}",
             ),
@@ -275,7 +323,7 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
         await dispatcher.feed_update(
             bot,
             command_update(
-                update_id=4,
+                update_id=6,
                 sender=new_athlete_user,
                 text=f"/start {raw_token}",
             ),
@@ -308,7 +356,7 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
         await dispatcher.feed_update(
             bot,
             command_update(
-                update_id=5,
+                update_id=7,
                 sender=telegram_user(
                     second_telegram_id,
                     first_name="Second",

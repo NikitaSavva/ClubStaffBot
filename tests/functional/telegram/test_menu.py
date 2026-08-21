@@ -18,6 +18,7 @@ from domain.identity import SystemRoleCode
 from entrypoints.bot import create_dispatcher
 from infrastructure.database.models import RoleModel, UserModel, UserRoleModel
 from presentation.telegram.handlers.menu import MENU_TEXT
+from presentation.telegram.navigation import BACK_BUTTON_TEXT
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
 
@@ -159,3 +160,4 @@ async def test_synthetic_user_receives_role_keyboard(
     assert [(button.text, button.callback_data) for button in buttons] == list(
         expected_buttons
     )
+    assert all(button.text != BACK_BUTTON_TEXT for button in buttons)

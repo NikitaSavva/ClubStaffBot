@@ -13,7 +13,7 @@ from aiogram.types import (
     Update,
     User,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bootstrap.config import Settings
@@ -27,13 +27,21 @@ from infrastructure.database.models import (
     UserModel,
     UserRoleModel,
 )
+from presentation.telegram.handlers.menu import MENU_TEXT
 from presentation.telegram.handlers.role_management import (
     ASSIGN_ROLE_PREFIX,
-    BEGIN_ASSIGN_ROLE_ACTION,
+    BEGIN_ASSIGN_ROLE_PREFIX,
     MANAGE_USERS_ACTION,
     ROLE_ASSIGNED_TEXT,
     SELECT_USER_PREFIX,
     USER_ROLE_CONTEXT_TEXT,
+    USER_SELECTION_UNAVAILABLE_TEXT,
+)
+from presentation.telegram.navigation import (
+    BACK_BUTTON_TEXT,
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
 )
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
@@ -191,8 +199,13 @@ async def test_administrator_assigns_role_through_telegram_flow(
     )
     target_sender = telegram_user(
         target_telegram_id,
-        first_name=f"Target{suffix}",
+        first_name=f"TargetA{suffix}",
         username=f"target_{suffix}",
+    )
+    second_target_sender = telegram_user(
+        target_telegram_id + 1,
+        first_name=f"TargetB{suffix}",
+        username=f"target_second_{suffix}",
     )
 
     try:
@@ -213,6 +226,13 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 telegram_id=target_telegram_id,
                 username=target_sender.username or "",
                 first_name=target_sender.first_name,
+                role_code=SystemRoleCode.ATHLETE,
+            )
+            second_target = await add_user_with_role(
+                session,
+                telegram_id=second_target_sender.id,
+                username=second_target_sender.username or "",
+                first_name=second_target_sender.first_name,
                 role_code=SystemRoleCode.ATHLETE,
             )
 
@@ -243,7 +263,7 @@ async def test_administrator_assigns_role_through_telegram_flow(
             message_update(
                 update_id=3,
                 sender=admin_sender,
-                text=target_sender.first_name,
+                text=suffix,
             ),
         )
         search_message = last_message_with_keyboard(sent_methods)
@@ -264,27 +284,134 @@ async def test_administrator_assigns_role_through_telegram_flow(
             USER_ROLE_CONTEXT_TEXT.split("{")[0]
         )
         assert "ATHLETE" in context_message.text
-        assert BEGIN_ASSIGN_ROLE_ACTION in keyboard_callbacks(context_message)
+        assert (
+            f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}"
+            in keyboard_callbacks(context_message)
+        )
 
         await dispatcher.feed_update(
             bot,
             callback_update(
                 update_id=5,
                 sender=admin_sender,
-                data=BEGIN_ASSIGN_ROLE_ACTION,
+                data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}",
             ),
         )
         role_message = last_message_with_keyboard(sent_methods)
-        assert keyboard_callbacks(role_message) == {
-            f"{ASSIGN_ROLE_PREFIX}{code.value}" for code in SystemRoleCode
-        }
+        role_callbacks = keyboard_callbacks(role_message)
+        assert {
+            f"{ASSIGN_ROLE_PREFIX}{target.id}:{code.value}"
+            for code in SystemRoleCode
+        }.issubset(role_callbacks)
+        back_to_profile = NavigationCallback(
+            action=NavigationAction.BACK,
+            target=NavigationTarget.USER_PROFILE,
+            target_id=target.id,
+        ).pack()
+        assert back_to_profile in role_callbacks
 
         await dispatcher.feed_update(
             bot,
             callback_update(
                 update_id=6,
                 sender=admin_sender,
-                data=f"{ASSIGN_ROLE_PREFIX}{SystemRoleCode.TRAINER.value}",
+                data=back_to_profile,
+            ),
+        )
+        returned_profile = last_message_with_keyboard(sent_methods)
+        assert target_sender.first_name in returned_profile.text
+        assert second_target_sender.first_name not in returned_profile.text
+        assert (
+            f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}"
+            in keyboard_callbacks(returned_profile)
+        )
+
+        async with session_factory() as session:
+            first_target_role_codes = set(
+                await session.scalars(
+                    select(RoleModel.code)
+                    .join(
+                        UserRoleModel,
+                        UserRoleModel.role_id == RoleModel.id,
+                    )
+                    .where(UserRoleModel.user_id == target.id)
+                )
+            )
+            role_assignment_audit_count = await session.scalar(
+                select(func.count())
+                .select_from(AuditLogModel)
+                .where(
+                    AuditLogModel.action == "ROLE_ASSIGNED",
+                    AuditLogModel.entity_id == target.id,
+                )
+            )
+        assert first_target_role_codes == {"ATHLETE"}
+        assert role_assignment_audit_count == 0
+
+        back_to_users = NavigationCallback(
+            action=NavigationAction.BACK,
+            target=NavigationTarget.USERS_LIST,
+        ).pack()
+        assert back_to_users in keyboard_callbacks(returned_profile)
+        assert any(
+            button.text == BACK_BUTTON_TEXT
+            for row in returned_profile.reply_markup.inline_keyboard
+            for button in row
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=7,
+                sender=admin_sender,
+                data=back_to_users,
+            ),
+        )
+        returned_list = last_message_with_keyboard(sent_methods)
+        assert f"{SELECT_USER_PREFIX}{target.id}" in keyboard_callbacks(
+            returned_list
+        )
+        assert (
+            f"{SELECT_USER_PREFIX}{second_target.id}"
+            in keyboard_callbacks(returned_list)
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=8,
+                sender=admin_sender,
+                data=f"{SELECT_USER_PREFIX}{second_target.id}",
+            ),
+        )
+        second_profile = last_message_with_keyboard(sent_methods)
+        assert second_target_sender.first_name in second_profile.text
+        assert target_sender.first_name not in second_profile.text
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=9,
+                sender=admin_sender,
+                data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{second_target.id}",
+            ),
+        )
+        second_role_message = last_message_with_keyboard(sent_methods)
+        assert (
+            f"{ASSIGN_ROLE_PREFIX}{second_target.id}:"
+            f"{SystemRoleCode.TRAINER.value}"
+            in keyboard_callbacks(second_role_message)
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=10,
+                sender=admin_sender,
+                data=(
+                    f"{ASSIGN_ROLE_PREFIX}{second_target.id}:"
+                    f"{SystemRoleCode.TRAINER.value}"
+                ),
             ),
         )
         success_message = next(
@@ -299,32 +426,32 @@ async def test_administrator_assigns_role_through_telegram_flow(
         assert "TRAINER" in success_message.text
 
         async with session_factory() as session:
-            target_role_codes = set(
+            second_target_role_codes = set(
                 await session.scalars(
                     select(RoleModel.code)
                     .join(
                         UserRoleModel,
                         UserRoleModel.role_id == RoleModel.id,
                     )
-                    .where(UserRoleModel.user_id == target.id)
+                    .where(UserRoleModel.user_id == second_target.id)
                 )
             )
             audit = await session.scalar(
                 select(AuditLogModel).where(
                     AuditLogModel.action == "ROLE_ASSIGNED",
                     AuditLogModel.actor_user_id == administrator.id,
-                    AuditLogModel.entity_id == target.id,
+                    AuditLogModel.entity_id == second_target.id,
                 )
             )
-        assert target_role_codes == {"ATHLETE", "TRAINER"}
+        assert second_target_role_codes == {"ATHLETE", "TRAINER"}
         assert audit is not None
         assert audit.payload == {"role_code": "TRAINER"}
 
         await dispatcher.feed_update(
             bot,
             message_update(
-                update_id=7,
-                sender=target_sender,
+                update_id=11,
+                sender=second_target_sender,
                 text="/menu",
             ),
         )
@@ -333,5 +460,133 @@ async def test_administrator_assigns_role_through_telegram_flow(
         )
         assert "athlete.home" in target_menu_callbacks
         assert "trainer.home" in target_menu_callbacks
+    finally:
+        await container.close()
+
+
+async def test_stale_user_callback_returns_controlled_menu_path(
+    integration_settings: Settings,
+    monkeypatch: Any,
+) -> None:
+    container = create_container(integration_settings)
+    sent_methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        sent_methods.append(method)
+        return True
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    suffix = uuid4().hex[:8]
+    admin_sender = telegram_user(
+        25_000_000 + uuid4().int % 1_000_000_000,
+        first_name="Admin",
+        username=f"stale_admin_{suffix}",
+    )
+    target_sender = telegram_user(
+        26_000_000 + uuid4().int % 1_000_000_000,
+        first_name=f"Stale{suffix}",
+        username=f"stale_target_{suffix}",
+    )
+
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        async with session_factory.begin() as session:
+            await add_user_with_role(
+                session,
+                telegram_id=admin_sender.id,
+                username=admin_sender.username or "",
+                first_name=admin_sender.first_name,
+                role_code=SystemRoleCode.ADMINISTRATOR,
+            )
+            target = await add_user_with_role(
+                session,
+                telegram_id=target_sender.id,
+                username=target_sender.username or "",
+                first_name=target_sender.first_name,
+                role_code=SystemRoleCode.ATHLETE,
+            )
+
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=1,
+                sender=admin_sender,
+                data=MANAGE_USERS_ACTION,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=2,
+                sender=admin_sender,
+                text=target_sender.first_name,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                sender=admin_sender,
+                data=f"{SELECT_USER_PREFIX}{target.id}",
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                sender=admin_sender,
+                data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}",
+            ),
+        )
+
+        async with session_factory.begin() as session:
+            await session.execute(
+                delete(UserRoleModel).where(
+                    UserRoleModel.user_id == target.id
+                )
+            )
+            await session.execute(
+                delete(UserModel).where(UserModel.id == target.id)
+            )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=5,
+                sender=admin_sender,
+                data=NavigationCallback(
+                    action=NavigationAction.BACK,
+                    target=NavigationTarget.USER_PROFILE,
+                    target_id=target.id,
+                ).pack(),
+            ),
+        )
+        unavailable_message = last_message_with_keyboard(sent_methods)
+        assert unavailable_message.text == USER_SELECTION_UNAVAILABLE_TEXT
+
+        menu_callback = NavigationCallback(
+            action=NavigationAction.BACK,
+            target=NavigationTarget.MENU,
+        ).pack()
+        assert menu_callback in keyboard_callbacks(unavailable_message)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=6,
+                sender=admin_sender,
+                data=menu_callback,
+            ),
+        )
+        assert last_message_with_keyboard(sent_methods).text == MENU_TEXT
     finally:
         await container.close()

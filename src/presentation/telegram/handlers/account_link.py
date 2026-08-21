@@ -21,6 +21,14 @@ from application.identity.errors import (
     AthleteNotFoundError,
     UserNotFoundError,
 )
+from presentation.telegram.navigation import (
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
+    build_back_button,
+    build_menu_button,
+    build_single_button_keyboard,
+)
 from presentation.telegram.qr import build_bot_start_deep_link, generate_qr_png
 
 LINK_ACCOUNT_ACTION = "administrator.link_athlete_account"
@@ -48,6 +56,7 @@ def build_athlete_selection_keyboard(
             ]
             for athlete in athletes
         ]
+        + [[build_back_button(NavigationTarget.MENU)]]
     )
 
 
@@ -68,11 +77,19 @@ async def handle_list_unlinked_athletes(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await message.answer(LINK_PERMISSION_DENIED_TEXT)
+        await message.answer(
+            LINK_PERMISSION_DENIED_TEXT,
+            reply_markup=build_single_button_keyboard(build_menu_button()),
+        )
         return
 
     if not athletes:
-        await message.answer(NO_UNLINKED_ATHLETES_TEXT)
+        await message.answer(
+            NO_UNLINKED_ATHLETES_TEXT,
+            reply_markup=build_single_button_keyboard(
+                build_back_button(NavigationTarget.MENU)
+            ),
+        )
         return
     await message.answer(
         SELECT_ATHLETE_TEXT,
@@ -94,12 +111,18 @@ async def handle_create_athlete_account_link_invite(
     try:
         athlete_id = int(callback.data.removeprefix(SELECT_ATHLETE_PREFIX))
     except ValueError:
-        await message.answer(CALLBACK_UNAVAILABLE_TEXT)
+        await message.answer(
+            CALLBACK_UNAVAILABLE_TEXT,
+            reply_markup=build_single_button_keyboard(build_menu_button()),
+        )
         return
 
     bot_user = await bot.get_me()
     if bot_user.username is None:
-        await message.answer(CALLBACK_UNAVAILABLE_TEXT)
+        await message.answer(
+            CALLBACK_UNAVAILABLE_TEXT,
+            reply_markup=build_single_button_keyboard(build_menu_button()),
+        )
         return
 
     try:
@@ -110,10 +133,18 @@ async def handle_create_athlete_account_link_invite(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await message.answer(LINK_PERMISSION_DENIED_TEXT)
+        await message.answer(
+            LINK_PERMISSION_DENIED_TEXT,
+            reply_markup=build_single_button_keyboard(build_menu_button()),
+        )
         return
     except (AthleteAlreadyLinkedError, AthleteNotFoundError):
-        await message.answer(ATHLETE_UNAVAILABLE_TEXT)
+        await message.answer(
+            ATHLETE_UNAVAILABLE_TEXT,
+            reply_markup=build_single_button_keyboard(
+                build_back_button(NavigationTarget.ATHLETE_LINK_LIST)
+            ),
+        )
         return
 
     deep_link = build_bot_start_deep_link(
@@ -124,6 +155,7 @@ async def handle_create_athlete_account_link_invite(
     await message.answer_photo(
         BufferedInputFile(qr_png, filename="athlete-account-link.png"),
         caption=INVITE_CAPTION.format(deep_link=deep_link),
+        reply_markup=build_single_button_keyboard(build_menu_button()),
     )
 
 
@@ -132,6 +164,13 @@ def create_account_link_router() -> Router:
     router.callback_query.register(
         handle_list_unlinked_athletes,
         F.data == LINK_ACCOUNT_ACTION,
+    )
+    router.callback_query.register(
+        handle_list_unlinked_athletes,
+        NavigationCallback.filter(
+            (F.action == NavigationAction.BACK)
+            & (F.target == NavigationTarget.ATHLETE_LINK_LIST)
+        ),
     )
     router.callback_query.register(
         handle_create_athlete_account_link_invite,

@@ -8,17 +8,25 @@ from application.athletes import (
     CreateManualAthleteCommand,
     CreateManualAthleteInteractor,
 )
+from application.identity import GetUserMenuContextInteractor
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
     UserNotFoundError,
 )
 from domain.identity import AthleteFirstNameRequiredError
+from presentation.telegram.handlers.menu import show_root_menu
+from presentation.telegram.navigation import (
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
+    build_cancel_button,
+    build_menu_button,
+    build_single_button_keyboard,
+)
 from presentation.telegram.states import CreateAthleteStates
 
 CREATE_ATHLETE_ACTION = "administrator.create_athlete"
-ENTER_FIRST_NAME_TEXT = (
-    "Введите имя спортсмена без фамилии. Для отмены отправьте /cancel."
-)
+ENTER_FIRST_NAME_TEXT = "Введите имя спортсмена без фамилии."
 INVALID_FIRST_NAME_TEXT = "Имя не может быть пустым. Введите имя еще раз."
 CREATE_ATHLETE_CANCELLED_TEXT = "Создание спортсмена отменено."
 CREATE_ATHLETE_PERMISSION_DENIED_TEXT = (
@@ -38,15 +46,44 @@ async def handle_begin_create_athlete(
 
     await state.clear()
     await state.set_state(CreateAthleteStates.waiting_for_first_name)
-    await message.answer(ENTER_FIRST_NAME_TEXT)
+    await message.answer(
+        ENTER_FIRST_NAME_TEXT,
+        reply_markup=build_single_button_keyboard(build_cancel_button()),
+    )
 
 
+@inject
 async def handle_cancel_create_athlete(
     message: Message,
     state: FSMContext,
+    menu_interactor: FromDishka[GetUserMenuContextInteractor],
 ) -> None:
-    await state.clear()
-    await message.answer(CREATE_ATHLETE_CANCELLED_TEXT)
+    telegram_user = message.from_user
+    await _cancel_create_athlete(
+        message=message,
+        state=state,
+        telegram_id=telegram_user.id if telegram_user is not None else None,
+        menu_interactor=menu_interactor,
+    )
+
+
+@inject
+async def handle_cancel_create_athlete_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    menu_interactor: FromDishka[GetUserMenuContextInteractor],
+) -> None:
+    await callback.answer()
+    message = callback.message
+    if not isinstance(message, Message):
+        return
+
+    await _cancel_create_athlete(
+        message=message,
+        state=state,
+        telegram_id=callback.from_user.id,
+        menu_interactor=menu_interactor,
+    )
 
 
 @inject
@@ -58,7 +95,12 @@ async def handle_create_athlete_first_name(
     telegram_user = message.from_user
     first_name = message.text.strip() if message.text is not None else ""
     if telegram_user is None or not first_name:
-        await message.answer(INVALID_FIRST_NAME_TEXT)
+        await message.answer(
+            INVALID_FIRST_NAME_TEXT,
+            reply_markup=build_single_button_keyboard(
+                build_cancel_button()
+            ),
+        )
         return
 
     try:
@@ -69,17 +111,43 @@ async def handle_create_athlete_first_name(
             )
         )
     except AthleteFirstNameRequiredError:
-        await message.answer(INVALID_FIRST_NAME_TEXT)
+        await message.answer(
+            INVALID_FIRST_NAME_TEXT,
+            reply_markup=build_single_button_keyboard(
+                build_cancel_button()
+            ),
+        )
         return
     except (AdministratorPermissionRequiredError, UserNotFoundError):
         await state.clear()
-        await message.answer(CREATE_ATHLETE_PERMISSION_DENIED_TEXT)
+        await message.answer(
+            CREATE_ATHLETE_PERMISSION_DENIED_TEXT,
+            reply_markup=build_single_button_keyboard(build_menu_button()),
+        )
         return
 
     await state.clear()
     await message.answer(
-        CREATE_ATHLETE_SUCCESS_TEXT.format(first_name=result.first_name)
+        CREATE_ATHLETE_SUCCESS_TEXT.format(first_name=result.first_name),
+        reply_markup=build_single_button_keyboard(build_menu_button()),
     )
+
+
+async def _cancel_create_athlete(
+    *,
+    message: Message,
+    state: FSMContext,
+    telegram_id: int | None,
+    menu_interactor: GetUserMenuContextInteractor,
+) -> None:
+    await state.clear()
+    await message.answer(CREATE_ATHLETE_CANCELLED_TEXT)
+    if telegram_id is not None:
+        await show_root_menu(
+            message=message,
+            telegram_id=telegram_id,
+            interactor=menu_interactor,
+        )
 
 
 def create_athlete_creation_router() -> Router:
@@ -91,6 +159,14 @@ def create_athlete_creation_router() -> Router:
     router.message.register(
         handle_cancel_create_athlete,
         Command("cancel"),
+        CreateAthleteStates.waiting_for_first_name,
+    )
+    router.callback_query.register(
+        handle_cancel_create_athlete_callback,
+        NavigationCallback.filter(
+            (F.action == NavigationAction.CANCEL)
+            & (F.target == NavigationTarget.MENU)
+        ),
         CreateAthleteStates.waiting_for_first_name,
     )
     router.message.register(
