@@ -16,6 +16,10 @@ _ROLE_MENU_ITEMS = {
             title="Меню администратора",
         ),
         MenuItem(
+            action_id="administrator.create_athlete",
+            title="Добавить спортсмена",
+        ),
+        MenuItem(
             action_id="administrator.link_athlete_account",
             title="Связать аккаунт",
         ),

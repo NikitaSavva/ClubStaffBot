@@ -4,6 +4,7 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from application.athletes import CreateManualAthleteInteractor
 from application.common import UnitOfWork
 from application.identity import (
     CreateAthleteAccountLinkInviteInteractor,
@@ -81,6 +82,9 @@ async def test_container_resolves_app_and_request_dependencies(
             registration_interactor = await request_container.get(
                 RegisterBotUserInteractor
             )
+            create_manual_athlete_interactor = await request_container.get(
+                CreateManualAthleteInteractor
+            )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
             )
@@ -104,6 +108,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 registration_interactor,
                 RegisterBotUserInteractor,
             )
+            assert isinstance(
+                create_manual_athlete_interactor,
+                CreateManualAthleteInteractor,
+            )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(
                 list_unlinked_interactor,
@@ -125,6 +133,15 @@ async def test_container_resolves_app_and_request_dependencies(
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository
             assert menu_interactor._roles is role_repository
+            assert create_manual_athlete_interactor._users is user_repository
+            assert (
+                create_manual_athlete_interactor._athletes
+                is athlete_repository
+            )
+            assert (
+                create_manual_athlete_interactor._audit_log
+                is audit_repository
+            )
             assert link_account_interactor._users is user_repository
             assert link_account_interactor._athletes is athlete_repository
             assert link_account_interactor._invites is invite_repository

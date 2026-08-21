@@ -86,6 +86,10 @@ async def add_user_with_role(
             (
                 ("Меню администратора", "administrator.home"),
                 (
+                    "Добавить спортсмена",
+                    "administrator.create_athlete",
+                ),
+                (
                     "Связать аккаунт",
                     "administrator.link_athlete_account",
                 ),
