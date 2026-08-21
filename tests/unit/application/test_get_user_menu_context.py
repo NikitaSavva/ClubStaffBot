@@ -90,6 +90,10 @@ def build_interactor(
                     action_id="administrator.link_athlete_account",
                     title="Связать аккаунт",
                 ),
+                MenuItem(
+                    action_id="administrator.manage_users",
+                    title="Пользователи",
+                ),
             ),
         ),
         (
@@ -143,6 +147,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "administrator.home",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
+        "administrator.manage_users",
         "trainer.home",
         "athlete.home",
     ]

@@ -1,13 +1,20 @@
 from datetime import datetime
 from typing import Protocol
 
+from application.identity.dto import BotUserSummary
 from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
 
 
 class UserRepository(Protocol):
     async def get_by_telegram_id(self, telegram_id: int) -> User | None: ...
 
+    async def get_by_id(self, user_id: int) -> User | None: ...
+
     async def add(self, user: User) -> int: ...
+
+
+class BotUserReader(Protocol):
+    async def search(self, query: str) -> tuple[BotUserSummary, ...]: ...
 
 
 class AthleteRepository(Protocol):
@@ -31,6 +38,8 @@ class RoleRepository(Protocol):
         user_id: int,
     ) -> tuple[SystemRoleCode, ...]: ...
 
+    async def is_assigned(self, *, user_id: int, role_id: int) -> bool: ...
+
     async def assign_to_user(
         self,
         *,
@@ -38,7 +47,7 @@ class RoleRepository(Protocol):
         role_id: int,
         assigned_by_user_id: int | None,
         assigned_at: datetime,
-    ) -> None: ...
+    ) -> bool: ...
 
 
 class BotInviteRepository(Protocol):
@@ -62,6 +71,7 @@ class AuditLogRepository(Protocol):
         action: str,
         entity_type: str,
         entity_id: int,
+        payload: dict[str, object] | None = None,
     ) -> None: ...
 
 

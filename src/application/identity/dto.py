@@ -50,3 +50,32 @@ class MenuItem:
 @dataclass(frozen=True, slots=True)
 class MenuContext:
     items: tuple[MenuItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BotUserSummary:
+    user_id: int
+    first_name: str
+    last_name: str
+    username: str | None
+    role_codes: tuple[SystemRoleCode, ...]
+
+    @property
+    def display_name(self) -> str:
+        return " ".join(
+            part for part in (self.first_name, self.last_name) if part
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SearchBotUsersResult:
+    users: tuple[BotUserSummary, ...]
+    assignable_role_codes: tuple[SystemRoleCode, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AssignUserRoleResult:
+    target_user_id: int
+    role_code: SystemRoleCode
+    role_was_assigned: bool
+    current_role_codes: tuple[SystemRoleCode, ...]

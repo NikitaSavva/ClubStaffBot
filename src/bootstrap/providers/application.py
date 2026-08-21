@@ -15,14 +15,49 @@ from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
     BotInviteRepository,
+    BotUserReader,
     InviteTokenGenerator,
     InviteTokenHasher,
     RoleRepository,
     UserRepository,
 )
+from application.identity.role_management import (
+    AssignUserRoleInteractor,
+    SearchBotUsersInteractor,
+)
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_search_bot_users_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        bot_user_reader: BotUserReader,
+    ) -> SearchBotUsersInteractor:
+        return SearchBotUsersInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            bot_user_reader=bot_user_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_assign_user_role_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+    ) -> AssignUserRoleInteractor:
+        return AssignUserRoleInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+            clock=clock,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_create_manual_athlete_interactor(
         self,

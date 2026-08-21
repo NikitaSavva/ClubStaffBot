@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import exists, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,18 +78,11 @@ class SqlAlchemyUserRepository:
         model = await self._session.scalar(
             select(UserModel).where(UserModel.telegram_id == telegram_id)
         )
-        if model is None:
-            return None
-        return User(
-            id=model.id,
-            telegram_id=model.telegram_id,
-            username=model.username,
-            first_name=model.first_name,
-            last_name=model.last_name,
-            is_active=model.is_active,
-            registered_at=model.registered_at,
-            last_seen_at=model.last_seen_at,
-        )
+        return _to_user(model)
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        model = await self._session.get(UserModel, user_id)
+        return _to_user(model)
 
     async def add(self, user: User) -> int:
         model = UserModel(
@@ -143,7 +137,21 @@ class SqlAlchemyRoleRepository:
                 ),
             )
         )
-        return tuple(SystemRoleCode(code) for code in codes)
+        assigned_codes = {SystemRoleCode(code) for code in codes}
+        return tuple(
+            code for code in SystemRoleCode if code in assigned_codes
+        )
+
+    async def is_assigned(self, *, user_id: int, role_id: int) -> bool:
+        is_assigned = await self._session.scalar(
+            select(
+                exists().where(
+                    UserRoleModel.user_id == user_id,
+                    UserRoleModel.role_id == role_id,
+                )
+            )
+        )
+        return bool(is_assigned)
 
     async def assign_to_user(
         self,
@@ -152,15 +160,24 @@ class SqlAlchemyRoleRepository:
         role_id: int,
         assigned_by_user_id: int | None,
         assigned_at: datetime,
-    ) -> None:
-        self._session.add(
-            UserRoleModel(
+    ) -> bool:
+        assigned_user_role_id = await self._session.scalar(
+            insert(UserRoleModel)
+            .values(
                 user_id=user_id,
                 role_id=role_id,
                 assigned_by_user_id=assigned_by_user_id,
                 assigned_at=assigned_at,
             )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    UserRoleModel.user_id,
+                    UserRoleModel.role_id,
+                ]
+            )
+            .returning(UserRoleModel.id)
         )
+        return assigned_user_role_id is not None
 
 
 class SqlAlchemyBotInviteRepository:
@@ -224,6 +241,7 @@ class SqlAlchemyAuditLogRepository:
         action: str,
         entity_type: str,
         entity_id: int,
+        payload: dict[str, object] | None = None,
     ) -> None:
         self._session.add(
             AuditLogModel(
@@ -231,9 +249,24 @@ class SqlAlchemyAuditLogRepository:
                 action=action,
                 entity_type=entity_type,
                 entity_id=entity_id,
-                payload=None,
+                payload=payload,
             )
         )
+
+
+def _to_user(model: UserModel | None) -> User | None:
+    if model is None:
+        return None
+    return User(
+        id=model.id,
+        telegram_id=model.telegram_id,
+        username=model.username,
+        first_name=model.first_name,
+        last_name=model.last_name,
+        is_active=model.is_active,
+        registered_at=model.registered_at,
+        last_seen_at=model.last_seen_at,
+    )
 
 
 def _to_athlete(model: AthleteModel | None) -> Athlete | None:
