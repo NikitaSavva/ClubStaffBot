@@ -6,7 +6,7 @@ import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
-from aiogram.methods import SendMessage, TelegramMethod
+from aiogram.methods import EditMessageCaption, SendPhoto, TelegramMethod
 from aiogram.types import (
     CallbackQuery,
     Chat,
@@ -38,13 +38,13 @@ from presentation.telegram.handlers.athlete_creation import (
     ENTER_FIRST_NAME_TEXT,
     INVALID_FIRST_NAME_TEXT,
 )
-from presentation.telegram.handlers.menu import MENU_TEXT
 from presentation.telegram.navigation import (
     CANCEL_BUTTON_TEXT,
     NavigationAction,
     NavigationCallback,
     NavigationTarget,
 )
+from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 BOT_USER = User(
@@ -140,12 +140,17 @@ async def add_user_with_role(
     return user.id
 
 
-def sent_texts(methods: list[TelegramMethod[Any]]) -> list[str]:
-    return [
-        method.text
-        for method in methods
-        if isinstance(method, SendMessage)
-    ]
+def screen_texts(methods: list[TelegramMethod[Any]]) -> list[str]:
+    texts: list[str] = []
+    for method in methods:
+        if isinstance(method, SendPhoto) and method.caption is not None:
+            texts.append(method.caption)
+        if (
+            isinstance(method, EditMessageCaption)
+            and method.caption is not None
+        ):
+            texts.append(method.caption)
+    return texts
 
 
 async def test_administrator_creates_athlete_through_menu_flow(
@@ -162,7 +167,7 @@ async def test_administrator_creates_athlete_through_menu_flow(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 16_000_000 + uuid4().int % 1_000_000_000
@@ -192,7 +197,7 @@ async def test_administrator_creates_athlete_through_menu_flow(
         menu_method = next(
             method
             for method in sent_methods
-            if isinstance(method, SendMessage)
+            if isinstance(method, SendPhoto)
             and isinstance(method.reply_markup, InlineKeyboardMarkup)
         )
         create_button = next(
@@ -207,13 +212,13 @@ async def test_administrator_creates_athlete_through_menu_flow(
             bot,
             callback_update(update_id=2, sender=sender),
         )
-        assert ENTER_FIRST_NAME_TEXT in sent_texts(sent_methods)
+        assert ENTER_FIRST_NAME_TEXT in screen_texts(sent_methods)
 
         await dispatcher.feed_update(
             bot,
             message_update(update_id=3, sender=sender, text="   "),
         )
-        assert INVALID_FIRST_NAME_TEXT in sent_texts(sent_methods)
+        assert INVALID_FIRST_NAME_TEXT in screen_texts(sent_methods)
 
         await dispatcher.feed_update(
             bot,
@@ -225,7 +230,15 @@ async def test_administrator_creates_athlete_through_menu_flow(
         )
         assert CREATE_ATHLETE_SUCCESS_TEXT.format(
             first_name=first_name
-        ) in sent_texts(sent_methods)
+        ) in screen_texts(sent_methods)
+        assert len(
+            [method for method in sent_methods if isinstance(method, SendPhoto)]
+        ) == 1
+        assert all(
+            method.message_id == 1
+            for method in sent_methods
+            if isinstance(method, EditMessageCaption)
+        )
 
         async with session_factory() as session:
             athlete = await session.scalar(
@@ -266,7 +279,7 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 17_000_000 + uuid4().int % 1_000_000_000
@@ -295,12 +308,12 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
         form_message = next(
             method
             for method in reversed(sent_methods)
-            if isinstance(method, SendMessage)
+            if isinstance(method, SendPhoto)
             and isinstance(method.reply_markup, InlineKeyboardMarkup)
         )
         cancel_callback = NavigationCallback(
             action=NavigationAction.CANCEL,
-            target=NavigationTarget.MENU,
+            target=NavigationTarget.ROLE_PANEL,
         ).pack()
         cancel_button = next(
             button
@@ -329,7 +342,9 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
             user_id=sender.id,
         )
         assert await dispatcher.storage.get_state(storage_key) is None
-        assert await dispatcher.storage.get_data(storage_key) == {}
+        state_data = await dispatcher.storage.get_data(storage_key)
+        assert "flow_context" not in state_data
+        assert "ui_context" in state_data
 
         await dispatcher.feed_update(
             bot,
@@ -352,8 +367,14 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
                     AuditLogModel.actor_user_id == actor_user_id,
                 )
             )
-        assert CREATE_ATHLETE_CANCELLED_TEXT in sent_texts(sent_methods)
-        assert MENU_TEXT in sent_texts(sent_methods)
+        assert any(
+            CREATE_ATHLETE_CANCELLED_TEXT in text
+            for text in screen_texts(sent_methods)
+        )
+        assert any(
+            "Панель администратора" in text
+            for text in screen_texts(sent_methods)
+        )
         assert athlete_count_after == athlete_count_before
         assert audit_count == 0
     finally:
@@ -379,7 +400,7 @@ async def test_non_administrator_callback_cannot_create_athlete(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 18_000_000 + uuid4().int % 1_000_000_000
@@ -417,7 +438,7 @@ async def test_non_administrator_callback_cannot_create_athlete(
                     AthleteModel.first_name == first_name
                 )
             )
-        assert CREATE_ATHLETE_PERMISSION_DENIED_TEXT in sent_texts(
+        assert CREATE_ATHLETE_PERMISSION_DENIED_TEXT in screen_texts(
             sent_methods
         )
         assert athlete is None

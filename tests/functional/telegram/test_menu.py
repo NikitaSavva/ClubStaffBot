@@ -5,8 +5,13 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
-from aiogram.methods import SendMessage, TelegramMethod
-from aiogram.types import Chat, InlineKeyboardMarkup, Message, Update, User
+from aiogram.methods import (
+    AnswerCallbackQuery,
+    EditMessageMedia,
+    SendPhoto,
+    TelegramMethod,
+)
+from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,17 +22,25 @@ from bootstrap.startup import bootstrap_system_roles
 from domain.identity import SystemRoleCode
 from entrypoints.bot import create_dispatcher
 from infrastructure.database.models import RoleModel, UserModel, UserRoleModel
-from presentation.telegram.handlers.menu import MENU_TEXT
-from presentation.telegram.navigation import BACK_BUTTON_TEXT
+from presentation.telegram.navigation import (
+    BACK_BUTTON_TEXT,
+    NavigationAction,
+    NavigationCallback,
+    NavigationTarget,
+)
+from presentation.telegram.presenters import RolePanel, RolePanelCallback
+from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
+BOT_USER = User(
+    id=123456789,
+    is_bot=True,
+    first_name="Staff Bot",
+    username="staff_test_bot",
+)
 
 
-def synthetic_menu_update(
-    *,
-    update_id: int,
-    telegram_id: int,
-) -> Update:
+def command_update(*, update_id: int, telegram_id: int, text: str) -> Update:
     return Update(
         update_id=update_id,
         message=Message(
@@ -41,23 +54,48 @@ def synthetic_menu_update(
                 last_name="User",
                 username=f"menu_{telegram_id}",
             ),
-            text="/menu",
+            text=text,
         ),
     )
 
 
-async def add_user_with_role(
+def callback_update(
+    *,
+    update_id: int,
+    telegram_id: int,
+    data: str,
+) -> Update:
+    return Update(
+        update_id=update_id,
+        callback_query=CallbackQuery(
+            id=f"callback-{update_id}",
+            from_user=User(
+                id=telegram_id,
+                is_bot=False,
+                first_name="Menu",
+                last_name="User",
+            ),
+            chat_instance=f"chat-{telegram_id}",
+            data=data,
+            message=Message(
+                message_id=1,
+                date=NOW,
+                chat=Chat(id=telegram_id, type=ChatType.PRIVATE),
+                from_user=BOT_USER,
+                caption="UI screen",
+            ),
+        ),
+    )
+
+
+async def add_user_with_roles(
     container: AsyncContainer,
     *,
     telegram_id: int,
-    role_code: SystemRoleCode,
+    role_codes: tuple[SystemRoleCode, ...],
 ) -> None:
     session_factory = await container.get(async_sessionmaker[AsyncSession])
     async with session_factory.begin() as session:
-        role = await session.scalar(
-            select(RoleModel).where(RoleModel.code == role_code.value)
-        )
-        assert role is not None
         user = UserModel(
             telegram_id=telegram_id,
             username=f"menu_{telegram_id}",
@@ -69,55 +107,60 @@ async def add_user_with_role(
         )
         session.add(user)
         await session.flush()
-        session.add(
-            UserRoleModel(
-                user_id=user.id,
-                role_id=role.id,
-                assigned_by_user_id=None,
-                assigned_at=NOW,
+        for role_code in role_codes:
+            role = await session.scalar(
+                select(RoleModel).where(RoleModel.code == role_code.value)
             )
-        )
+            assert role is not None
+            session.add(
+                UserRoleModel(
+                    user_id=user.id,
+                    role_id=role.id,
+                    assigned_by_user_id=None,
+                    assigned_at=NOW,
+                )
+            )
 
 
 @pytest.mark.parametrize(
-    ("role_code", "expected_buttons"),
+    ("role_code", "expected_caption", "expected_banner", "expected_rows"),
     [
         (
             SystemRoleCode.ADMINISTRATOR,
-            (
-                ("Меню администратора", "administrator.home"),
-                (
-                    "Добавить спортсмена",
-                    "administrator.create_athlete",
-                ),
-                (
-                    "Связать аккаунт",
-                    "administrator.link_athlete_account",
-                ),
-                (
-                    "Пользователи",
-                    "administrator.manage_users",
-                ),
-            ),
-        ),
-        (
-            SystemRoleCode.ATHLETE,
-            (("Меню спортсмена", "athlete.home"),),
+            "Панель администратора",
+            "admin-banner-file-id",
+            [
+                [("Добавить спортсмена", "administrator.create_athlete")],
+                [
+                    ("Пользователи", "administrator.manage_users"),
+                    ("Связать аккаунт", "administrator.link_athlete_account"),
+                ],
+            ],
         ),
         (
             SystemRoleCode.TRAINER,
-            (("Меню тренера", "trainer.home"),),
+            "Панель тренера",
+            "trainer-banner-file-id",
+            [],
+        ),
+        (
+            SystemRoleCode.ATHLETE,
+            "Панель спортсмена",
+            "athlete-banner-file-id",
+            [],
         ),
     ],
 )
-async def test_synthetic_user_receives_role_keyboard(
+async def test_start_opens_single_role_panel_without_back(
     integration_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     role_code: SystemRoleCode,
-    expected_buttons: tuple[tuple[str, str], ...],
+    expected_caption: str,
+    expected_banner: str,
+    expected_rows: list[list[tuple[str, str]]],
 ) -> None:
     container = create_container(integration_settings)
-    sent_methods: list[TelegramMethod[Any]] = []
+    methods: list[TelegramMethod[Any]] = []
 
     async def fake_bot_call(
         bot: Bot,
@@ -125,39 +168,119 @@ async def test_synthetic_user_receives_role_keyboard(
         request_timeout: int | None = None,
     ) -> Any:
         del bot, request_timeout
-        sent_methods.append(method)
-        return True
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 6_000_000 + uuid4().int % 1_000_000_000
-
     try:
         await bootstrap_system_roles(container)
-        await add_user_with_role(
+        await add_user_with_roles(
             container,
             telegram_id=telegram_id,
-            role_code=role_code,
+            role_codes=(role_code,),
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            command_update(update_id=1, telegram_id=telegram_id, text="/start"),
+        )
+    finally:
+        await container.close()
+
+    assert len(methods) == 1
+    method = methods[0]
+    assert isinstance(method, SendPhoto)
+    assert method.photo == expected_banner
+    assert method.caption == expected_caption
+    assert method.reply_markup is not None
+    actual_rows = [
+        [(button.text, button.callback_data) for button in row]
+        for row in method.reply_markup.inline_keyboard
+    ]
+    assert actual_rows == expected_rows
+    assert all(
+        button.text != BACK_BUTTON_TEXT
+        for row in method.reply_markup.inline_keyboard
+        for button in row
+    )
+
+
+async def test_multi_role_user_returns_from_panel_to_role_selector(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 7_000_000 + uuid4().int % 1_000_000_000
+    select_admin = RolePanelCallback(role=RolePanel.ADMINISTRATOR).pack()
+    back_to_selector = NavigationCallback(
+        action=NavigationAction.BACK,
+        target=NavigationTarget.ROLE_SELECTOR,
+    ).pack()
+    try:
+        await bootstrap_system_roles(container)
+        await add_user_with_roles(
+            container,
+            telegram_id=telegram_id,
+            role_codes=tuple(SystemRoleCode),
         )
         bot = await container.get(Bot)
         dispatcher = create_dispatcher(container)
 
         await dispatcher.feed_update(
             bot,
-            synthetic_menu_update(
-                update_id=1,
+            command_update(update_id=1, telegram_id=telegram_id, text="/start"),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=2,
                 telegram_id=telegram_id,
+                data=select_admin,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                telegram_id=telegram_id,
+                data=back_to_selector,
             ),
         )
     finally:
         await container.close()
 
-    assert len(sent_methods) == 1
-    method = sent_methods[0]
-    assert isinstance(method, SendMessage)
-    assert method.text == MENU_TEXT
-    assert isinstance(method.reply_markup, InlineKeyboardMarkup)
-    buttons = [row[0] for row in method.reply_markup.inline_keyboard]
-    assert [(button.text, button.callback_data) for button in buttons] == list(
-        expected_buttons
+    sends = [method for method in methods if isinstance(method, SendPhoto)]
+    edits = [method for method in methods if isinstance(method, EditMessageMedia)]
+    answers = [
+        method for method in methods if isinstance(method, AnswerCallbackQuery)
+    ]
+    assert len(sends) == 1
+    assert sends[0].photo == "role-selector-banner-file-id"
+    assert len(edits) == 2
+    assert edits[0].message_id == 1
+    assert edits[0].media.media == "admin-banner-file-id"
+    assert edits[0].reply_markup is not None
+    assert any(
+        button.callback_data == back_to_selector
+        for row in edits[0].reply_markup.inline_keyboard
+        for button in row
     )
-    assert all(button.text != BACK_BUTTON_TEXT for button in buttons)
+    assert edits[1].message_id == 1
+    assert edits[1].media.media == "role-selector-banner-file-id"
+    assert len(answers) == 2
+    assert methods.index(answers[0]) < methods.index(edits[0])
+    assert methods.index(answers[1]) < methods.index(edits[1])

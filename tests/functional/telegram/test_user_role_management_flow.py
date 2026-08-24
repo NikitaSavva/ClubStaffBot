@@ -1,10 +1,17 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from aiogram import Bot
 from aiogram.enums import ChatType
-from aiogram.methods import SendMessage, TelegramMethod
+from aiogram.methods import (
+    AnswerCallbackQuery,
+    EditMessageCaption,
+    EditMessageMedia,
+    SendPhoto,
+    TelegramMethod,
+)
 from aiogram.types import (
     CallbackQuery,
     Chat,
@@ -27,7 +34,6 @@ from infrastructure.database.models import (
     UserModel,
     UserRoleModel,
 )
-from presentation.telegram.handlers.menu import MENU_TEXT
 from presentation.telegram.handlers.role_management import (
     ASSIGN_ROLE_PREFIX,
     BEGIN_ASSIGN_ROLE_PREFIX,
@@ -43,6 +49,8 @@ from presentation.telegram.navigation import (
     NavigationCallback,
     NavigationTarget,
 )
+from presentation.telegram.presenters import RolePanel, RolePanelCallback
+from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 BOT_USER = User(
@@ -152,19 +160,33 @@ async def add_user_with_role(
     return user
 
 
+@dataclass(frozen=True, slots=True)
+class ScreenSnapshot:
+    text: str
+    reply_markup: InlineKeyboardMarkup
+
+
 def last_message_with_keyboard(
     methods: list[TelegramMethod[Any]],
-) -> SendMessage:
-    return next(
-        method
-        for method in reversed(methods)
-        if isinstance(method, SendMessage)
-        and isinstance(method.reply_markup, InlineKeyboardMarkup)
-    )
+) -> ScreenSnapshot:
+    for method in reversed(methods):
+        if isinstance(method, SendPhoto):
+            text = method.caption
+            reply_markup = method.reply_markup
+        elif isinstance(method, EditMessageCaption):
+            text = method.caption
+            reply_markup = method.reply_markup
+        elif isinstance(method, EditMessageMedia):
+            text = method.media.caption
+            reply_markup = method.reply_markup
+        else:
+            continue
+        if text is not None and isinstance(reply_markup, InlineKeyboardMarkup):
+            return ScreenSnapshot(text=text, reply_markup=reply_markup)
+    raise AssertionError("No rendered screen with inline keyboard")
 
 
-def keyboard_callbacks(message: SendMessage) -> set[str | None]:
-    assert isinstance(message.reply_markup, InlineKeyboardMarkup)
+def keyboard_callbacks(message: ScreenSnapshot) -> set[str | None]:
     return {
         button.callback_data
         for row in message.reply_markup.inline_keyboard
@@ -186,7 +208,7 @@ async def test_administrator_assigns_role_through_telegram_flow(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     admin_telegram_id = 23_000_000 + uuid4().int % 1_000_000_000
@@ -414,11 +436,7 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 ),
             ),
         )
-        success_message = next(
-            method
-            for method in reversed(sent_methods)
-            if isinstance(method, SendMessage)
-        )
+        success_message = last_message_with_keyboard(sent_methods)
         assert success_message.text.startswith(
             ROLE_ASSIGNED_TEXT.split("{")[0]
         )
@@ -458,8 +476,36 @@ async def test_administrator_assigns_role_through_telegram_flow(
         target_menu_callbacks = keyboard_callbacks(
             last_message_with_keyboard(sent_methods)
         )
-        assert "athlete.home" in target_menu_callbacks
-        assert "trainer.home" in target_menu_callbacks
+        assert RolePanelCallback(
+            role=RolePanel.ATHLETE
+        ).pack() in target_menu_callbacks
+        assert RolePanelCallback(
+            role=RolePanel.TRAINER
+        ).pack() in target_menu_callbacks
+        admin_sends = [
+            method
+            for method in sent_methods
+            if isinstance(method, SendPhoto)
+            and method.chat_id == admin_telegram_id
+        ]
+        assert len(admin_sends) == 1
+        assert all(
+            method.message_id == 1
+            for method in sent_methods
+            if isinstance(method, (EditMessageCaption, EditMessageMedia))
+            and method.chat_id == admin_telegram_id
+        )
+        first_answer = next(
+            method
+            for method in sent_methods
+            if isinstance(method, AnswerCallbackQuery)
+        )
+        first_edit = next(
+            method
+            for method in sent_methods
+            if isinstance(method, EditMessageCaption)
+        )
+        assert sent_methods.index(first_answer) < sent_methods.index(first_edit)
     finally:
         await container.close()
 
@@ -478,7 +524,7 @@ async def test_stale_user_callback_returns_controlled_menu_path(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     suffix = uuid4().hex[:8]
@@ -576,7 +622,7 @@ async def test_stale_user_callback_returns_controlled_menu_path(
 
         menu_callback = NavigationCallback(
             action=NavigationAction.BACK,
-            target=NavigationTarget.MENU,
+            target=NavigationTarget.ROLE_PANEL,
         ).pack()
         assert menu_callback in keyboard_callbacks(unavailable_message)
         await dispatcher.feed_update(
@@ -587,6 +633,9 @@ async def test_stale_user_callback_returns_controlled_menu_path(
                 data=menu_callback,
             ),
         )
-        assert last_message_with_keyboard(sent_methods).text == MENU_TEXT
+        assert (
+            last_message_with_keyboard(sent_methods).text
+            == "Панель администратора"
+        )
     finally:
         await container.close()

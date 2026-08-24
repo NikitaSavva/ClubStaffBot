@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from aiogram import Bot
 from aiogram.enums import ChatType
-from aiogram.methods import SendMessage, TelegramMethod
+from aiogram.methods import SendPhoto, TelegramMethod
 from aiogram.types import Chat, Message, Update, User
 from sqlalchemy import select
 
@@ -25,6 +25,7 @@ from presentation.telegram.handlers.start import (
     INVALID_INVITE_TEXT,
     REGISTRATION_SUCCESS_TEXT,
 )
+from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
@@ -67,7 +68,7 @@ async def test_synthetic_start_registration_flow(
     ) -> Any:
         del bot, request_timeout
         sent_methods.append(method)
-        return True
+        return telegram_method_result(method, message_id=len(sent_methods))
 
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
 
@@ -96,9 +97,17 @@ async def test_synthetic_start_registration_flow(
             ),
         )
 
-        assert [
-            method.text for method in sent_methods if isinstance(method, SendMessage)
-        ] == [REGISTRATION_SUCCESS_TEXT, INVALID_INVITE_TEXT]
+        screens = [
+            method
+            for method in sent_methods
+            if isinstance(method, SendPhoto)
+        ]
+        assert len(screens) == 2
+        assert screens[0].photo == "athlete-banner-file-id"
+        assert screens[0].caption is not None
+        assert screens[0].caption.startswith(REGISTRATION_SUCCESS_TEXT)
+        assert screens[1].photo == "role-selector-banner-file-id"
+        assert screens[1].caption == INVALID_INVITE_TEXT
 
         engine = create_engine(integration_settings.database_url)
         session_factory = create_session_factory(engine)

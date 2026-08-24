@@ -1,12 +1,7 @@
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from dishka.integrations.aiogram import FromDishka, inject
 
 from application.identity import (
@@ -24,7 +19,11 @@ from application.identity.errors import (
     UserNotFoundError,
 )
 from domain.identity import SystemRoleCode
-from presentation.telegram.handlers.menu import show_root_menu
+from presentation.telegram.handlers.menu import show_active_role_panel
+from presentation.telegram.keyboards.layout import (
+    build_callback_button,
+    build_inline_keyboard,
+)
 from presentation.telegram.navigation import (
     NavigationAction,
     NavigationCallback,
@@ -32,9 +31,23 @@ from presentation.telegram.navigation import (
     build_back_button,
     build_cancel_button,
     build_menu_button,
-    build_single_button_keyboard,
+)
+from presentation.telegram.presenters import RolePanel
+from presentation.telegram.screen import (
+    BannerContext,
+    TelegramScreen,
+    TelegramScreenRenderer,
 )
 from presentation.telegram.states import RoleManagementStates
+from presentation.telegram.ui_context import (
+    NavigationContext,
+    RootScreen,
+    clear_flow_context,
+    get_flow_context,
+    set_flow_context,
+    set_navigation_context,
+    update_flow_context,
+)
 
 MANAGE_USERS_ACTION = "administrator.manage_users"
 SELECT_USER_PREFIX = "user_roles.select:"
@@ -52,7 +65,7 @@ ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT = (
     "Действие доступно только администратору."
 )
 USER_SELECTION_UNAVAILABLE_TEXT = (
-    "Пользователь больше не доступен. Вернитесь в актуальное меню."
+    "Пользователь больше не доступен. Вернитесь в актуальную панель."
 )
 ROLE_CONFIGURATION_UNAVAILABLE_TEXT = (
     "Выбранная системная роль сейчас недоступна. Обратитесь к администратору "
@@ -69,37 +82,33 @@ ROLE_ALREADY_ASSIGNED_TEXT = (
 def build_user_selection_keyboard(
     users: tuple[BotUserSummary, ...],
 ) -> InlineKeyboardMarkup:
-    user_rows = [
-        [
-            InlineKeyboardButton(
+    user_rows = tuple(
+        (
+            build_callback_button(
                 text=_user_label(user),
                 callback_data=f"{SELECT_USER_PREFIX}{user.user_id}",
-            )
-        ]
+            ),
+        )
         for user in users
-    ]
-    return InlineKeyboardMarkup(
-        inline_keyboard=user_rows
-        + [[build_back_button(NavigationTarget.MENU)]]
+    )
+    return build_inline_keyboard(
+        *user_rows,
+        (build_back_button(NavigationTarget.ROLE_PANEL),),
     )
 
 
 def build_begin_assignment_keyboard(
     target_user_id: int,
 ) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Назначить роль",
-                    callback_data=(
-                        f"{BEGIN_ASSIGN_ROLE_PREFIX}{target_user_id}"
-                    ),
-                )
-            ],
-            [build_back_button(NavigationTarget.USERS_LIST)],
-            [build_cancel_button()],
-        ]
+    return build_inline_keyboard(
+        (
+            build_callback_button(
+                text="Назначить роль",
+                callback_data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target_user_id}",
+            ),
+        ),
+        (build_back_button(NavigationTarget.USERS_LIST),),
+        (build_cancel_button(),),
     )
 
 
@@ -107,46 +116,52 @@ def build_role_selection_keyboard(
     target_user_id: int,
     role_codes: tuple[SystemRoleCode, ...],
 ) -> InlineKeyboardMarkup:
-    role_rows = [
-        [
-            InlineKeyboardButton(
-                text=role_code.value,
-                callback_data=(
-                    f"{ASSIGN_ROLE_PREFIX}{target_user_id}:"
-                    f"{role_code.value}"
-                ),
-            )
-        ]
+    role_buttons = tuple(
+        build_callback_button(
+            text=role_code.value,
+            callback_data=(
+                f"{ASSIGN_ROLE_PREFIX}{target_user_id}:{role_code.value}"
+            ),
+        )
         for role_code in role_codes
-    ]
-    return InlineKeyboardMarkup(
-        inline_keyboard=role_rows
-        + [
-            [
-                build_back_button(
-                    NavigationTarget.USER_PROFILE,
-                    target_id=target_user_id,
-                )
-            ],
-            [build_cancel_button()],
-        ]
+    )
+    role_rows = tuple(
+        role_buttons[index : index + 2]
+        for index in range(0, len(role_buttons), 2)
+    )
+    return build_inline_keyboard(
+        *role_rows,
+        (
+            build_back_button(
+                NavigationTarget.USER_PROFILE,
+                target_id=target_user_id,
+            ),
+        ),
+        (build_cancel_button(),),
     )
 
 
+@inject
 async def handle_begin_user_search(
     callback: CallbackQuery,
     state: FSMContext,
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
 
-    await state.clear()
+    await _set_admin_navigation(state)
+    await set_flow_context(state, {})
     await state.set_state(RoleManagementStates.waiting_for_query)
-    await message.answer(
-        ENTER_USER_QUERY_TEXT,
-        reply_markup=build_single_button_keyboard(build_cancel_button()),
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=ENTER_USER_QUERY_TEXT,
+        reply_markup=build_inline_keyboard((build_cancel_button(),)),
+        editable_message=message,
     )
 
 
@@ -155,6 +170,7 @@ async def handle_cancel_role_management(
     message: Message,
     state: FSMContext,
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
     await _cancel_role_management(
@@ -162,6 +178,8 @@ async def handle_cancel_role_management(
         state=state,
         telegram_id=telegram_user.id if telegram_user is not None else None,
         menu_interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=None,
     )
 
 
@@ -170,6 +188,7 @@ async def handle_cancel_role_management_callback(
     callback: CallbackQuery,
     state: FSMContext,
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -181,6 +200,8 @@ async def handle_cancel_role_management_callback(
         state=state,
         telegram_id=callback.from_user.id,
         menu_interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=message,
     )
 
 
@@ -189,15 +210,17 @@ async def handle_search_bot_users(
     message: Message,
     state: FSMContext,
     interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
     query = message.text.strip() if message.text is not None else ""
     if telegram_user is None or not query:
-        await message.answer(
-            INVALID_USER_QUERY_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_cancel_button()
-            ),
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=INVALID_USER_QUERY_TEXT,
+            reply_markup=build_inline_keyboard((build_cancel_button(),)),
         )
         return
 
@@ -209,20 +232,30 @@ async def handle_search_bot_users(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await _show_permission_denied(message=message, state=state)
-        return
-
-    if not result.users:
-        await message.answer(
-            NO_USERS_FOUND_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_cancel_button()
-            ),
+        await _show_permission_denied(
+            message=message,
+            state=state,
+            renderer=renderer,
         )
         return
 
-    await state.set_data({"search_query": query})
-    await _show_users_list(message=message, state=state, result=result)
+    await set_flow_context(state, {"search_query": query})
+    if not result.users:
+        await state.set_state(RoleManagementStates.waiting_for_query)
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=NO_USERS_FOUND_TEXT,
+            reply_markup=build_inline_keyboard((build_cancel_button(),)),
+        )
+        return
+    await _show_users_list(
+        message=message,
+        state=state,
+        result=result,
+        renderer=renderer,
+    )
 
 
 @inject
@@ -230,6 +263,7 @@ async def handle_select_bot_user(
     callback: CallbackQuery,
     state: FSMContext,
     interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -241,7 +275,7 @@ async def handle_select_bot_user(
         prefix=SELECT_USER_PREFIX,
     )
     if target_user_id is None:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
 
     search_context = await _load_search_context(
@@ -249,6 +283,7 @@ async def handle_select_bot_user(
         state=state,
         actor_telegram_id=callback.from_user.id,
         interactor=interactor,
+        renderer=renderer,
     )
     if search_context is None:
         return
@@ -256,14 +291,9 @@ async def handle_select_bot_user(
 
     target = _find_user(result, target_user_id)
     if target is None:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
-
-    await _show_user_profile(
-        message=message,
-        state=state,
-        target=target,
-    )
+    await _show_user_profile(message, state, target, renderer)
 
 
 @inject
@@ -271,6 +301,7 @@ async def handle_back_to_users_list(
     callback: CallbackQuery,
     state: FSMContext,
     interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -282,22 +313,30 @@ async def handle_back_to_users_list(
         state=state,
         actor_telegram_id=callback.from_user.id,
         interactor=interactor,
+        renderer=renderer,
     )
     if search_context is None:
         return
     query, result = search_context
-
-    await state.set_data({"search_query": query})
+    await set_flow_context(state, {"search_query": query})
     if not result.users:
         await state.set_state(RoleManagementStates.waiting_for_query)
-        await message.answer(
-            NO_USERS_FOUND_TEXT,
-            reply_markup=build_single_button_keyboard(
-                build_cancel_button()
-            ),
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=NO_USERS_FOUND_TEXT,
+            reply_markup=build_inline_keyboard((build_cancel_button(),)),
+            editable_message=message,
         )
         return
-    await _show_users_list(message=message, state=state, result=result)
+    await _show_users_list(
+        message=message,
+        state=state,
+        result=result,
+        renderer=renderer,
+        editable_message=message,
+    )
 
 
 @inject
@@ -305,38 +344,44 @@ async def handle_begin_role_assignment(
     callback: CallbackQuery,
     state: FSMContext,
     interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
 
-    callback_target_user_id = _parse_target_user_id(
+    target_user_id = _parse_target_user_id(
         callback.data,
         prefix=BEGIN_ASSIGN_ROLE_PREFIX,
     )
-    if callback_target_user_id is None:
-        await _show_user_unavailable(message=message, state=state)
+    if target_user_id is None:
+        await _show_user_unavailable(message, state, renderer)
         return
 
     target_context = await _load_target_context(
         message=message,
         state=state,
         actor_telegram_id=callback.from_user.id,
-        expected_target_user_id=callback_target_user_id,
+        expected_target_user_id=target_user_id,
         interactor=interactor,
+        renderer=renderer,
     )
     if target_context is None:
         return
     target, result = target_context
 
     await state.set_state(RoleManagementStates.waiting_for_role_selection)
-    await message.answer(
-        SELECT_ROLE_TEXT.format(user=_user_label(target)),
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=SELECT_ROLE_TEXT.format(user=_user_label(target)),
         reply_markup=build_role_selection_keyboard(
             target.user_id,
             result.assignable_role_codes,
         ),
+        editable_message=message,
     )
 
 
@@ -345,6 +390,7 @@ async def handle_back_to_user_profile(
     callback: CallbackQuery,
     state: FSMContext,
     interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -354,10 +400,10 @@ async def handle_back_to_user_profile(
     try:
         navigation = NavigationCallback.unpack(callback.data)
     except ValueError:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
     if navigation.target_id is None:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
 
     target_context = await _load_target_context(
@@ -366,15 +412,17 @@ async def handle_back_to_user_profile(
         actor_telegram_id=callback.from_user.id,
         expected_target_user_id=navigation.target_id,
         interactor=interactor,
+        renderer=renderer,
     )
     if target_context is None:
         return
     target, _ = target_context
-
     await _show_user_profile(
-        message=message,
-        state=state,
-        target=target,
+        message,
+        state,
+        target,
+        renderer,
+        editable_message=message,
     )
 
 
@@ -383,6 +431,7 @@ async def handle_assign_user_role(
     callback: CallbackQuery,
     state: FSMContext,
     interactor: FromDishka[AssignUserRoleInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     await callback.answer()
     message = callback.message
@@ -390,14 +439,14 @@ async def handle_assign_user_role(
         return
 
     assignment = _parse_role_assignment(callback.data)
-    data = await state.get_data()
-    state_target_user_id = data.get("target_user_id")
+    flow_context = await get_flow_context(state)
+    state_target_user_id = flow_context.get("target_user_id")
     if (
         assignment is None
         or not isinstance(state_target_user_id, int)
         or state_target_user_id != assignment[0]
     ):
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
     target_user_id, role_code = assignment
 
@@ -410,31 +459,39 @@ async def handle_assign_user_role(
             )
         )
     except AdministratorPermissionRequiredError:
-        await _show_permission_denied(message=message, state=state)
+        await _show_permission_denied(message, state, renderer)
         return
     except UserNotFoundError:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return
     except RequiredSystemRoleMissingError:
-        await state.clear()
-        await message.answer(
-            ROLE_CONFIGURATION_UNAVAILABLE_TEXT,
-            reply_markup=build_single_button_keyboard(build_menu_button()),
+        await clear_flow_context(state)
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=ROLE_CONFIGURATION_UNAVAILABLE_TEXT,
+            reply_markup=build_inline_keyboard((build_menu_button(),)),
+            editable_message=message,
         )
         return
 
-    await state.clear()
     response_template = (
         ROLE_ASSIGNED_TEXT
         if result.role_was_assigned
         else ROLE_ALREADY_ASSIGNED_TEXT
     )
-    await message.answer(
-        response_template.format(
+    await clear_flow_context(state)
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=response_template.format(
             role=result.role_code.value,
             roles=_roles_text(result.current_role_codes),
         ),
-        reply_markup=build_single_button_keyboard(build_menu_button()),
+        reply_markup=build_inline_keyboard((build_menu_button(),)),
+        editable_message=message,
     )
 
 
@@ -453,7 +510,7 @@ def create_role_management_router() -> Router:
         handle_cancel_role_management_callback,
         NavigationCallback.filter(
             (F.action == NavigationAction.CANCEL)
-            & (F.target == NavigationTarget.MENU)
+            & (F.target == NavigationTarget.ROLE_PANEL)
         ),
         StateFilter(RoleManagementStates),
     )
@@ -501,15 +558,29 @@ async def _cancel_role_management(
     state: FSMContext,
     telegram_id: int | None,
     menu_interactor: GetUserMenuContextInteractor,
+    renderer: TelegramScreenRenderer,
+    editable_message: Message | None,
 ) -> None:
-    await state.clear()
-    await message.answer(ROLE_MANAGEMENT_CANCELLED_TEXT)
-    if telegram_id is not None:
-        await show_root_menu(
+    await clear_flow_context(state)
+    if telegram_id is None:
+        await _render_admin_screen(
             message=message,
-            telegram_id=telegram_id,
-            interactor=menu_interactor,
+            state=state,
+            renderer=renderer,
+            text=ROLE_MANAGEMENT_CANCELLED_TEXT,
+            reply_markup=None,
+            editable_message=editable_message,
         )
+        return
+    await show_active_role_panel(
+        chat_id=message.chat.id,
+        telegram_id=telegram_id,
+        state=state,
+        interactor=menu_interactor,
+        renderer=renderer,
+        editable_message=editable_message,
+        notice=ROLE_MANAGEMENT_CANCELLED_TEXT,
+    )
 
 
 async def _load_search_context(
@@ -518,11 +589,12 @@ async def _load_search_context(
     state: FSMContext,
     actor_telegram_id: int,
     interactor: SearchBotUsersInteractor,
+    renderer: TelegramScreenRenderer,
 ) -> tuple[str, SearchBotUsersResult] | None:
-    data = await state.get_data()
-    search_query = data.get("search_query")
+    flow_context = await get_flow_context(state)
+    search_query = flow_context.get("search_query")
     if not isinstance(search_query, str):
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return None
 
     try:
@@ -533,7 +605,7 @@ async def _load_search_context(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await _show_permission_denied(message=message, state=state)
+        await _show_permission_denied(message, state, renderer)
         return None
     return search_query, result
 
@@ -545,14 +617,15 @@ async def _load_target_context(
     actor_telegram_id: int,
     expected_target_user_id: int,
     interactor: SearchBotUsersInteractor,
+    renderer: TelegramScreenRenderer,
 ) -> tuple[BotUserSummary, SearchBotUsersResult] | None:
-    data = await state.get_data()
-    state_target_user_id = data.get("target_user_id")
+    flow_context = await get_flow_context(state)
+    state_target_user_id = flow_context.get("target_user_id")
     if (
         not isinstance(state_target_user_id, int)
         or state_target_user_id != expected_target_user_id
     ):
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return None
 
     search_context = await _load_search_context(
@@ -560,69 +633,120 @@ async def _load_target_context(
         state=state,
         actor_telegram_id=actor_telegram_id,
         interactor=interactor,
+        renderer=renderer,
     )
     if search_context is None:
         return None
     _, result = search_context
-
     target = _find_user(result, state_target_user_id)
     if target is None:
-        await _show_user_unavailable(message=message, state=state)
+        await _show_user_unavailable(message, state, renderer)
         return None
     return target, result
 
 
 async def _show_users_list(
-    *,
     message: Message,
     state: FSMContext,
     result: SearchBotUsersResult,
+    renderer: TelegramScreenRenderer,
+    *,
+    editable_message: Message | None = None,
 ) -> None:
     await state.set_state(RoleManagementStates.waiting_for_user_selection)
-    await message.answer(
-        SELECT_USER_TEXT,
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=SELECT_USER_TEXT,
         reply_markup=build_user_selection_keyboard(result.users),
+        editable_message=editable_message,
     )
 
 
 async def _show_user_profile(
-    *,
     message: Message,
     state: FSMContext,
     target: BotUserSummary,
+    renderer: TelegramScreenRenderer,
+    *,
+    editable_message: Message | None = None,
 ) -> None:
-    await state.update_data(target_user_id=target.user_id)
+    await update_flow_context(state, target_user_id=target.user_id)
     await state.set_state(RoleManagementStates.viewing_user)
-    await message.answer(
-        USER_ROLE_CONTEXT_TEXT.format(
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=USER_ROLE_CONTEXT_TEXT.format(
             user=_user_label(target),
             roles=_roles_text(target.role_codes),
         ),
         reply_markup=build_begin_assignment_keyboard(target.user_id),
+        editable_message=editable_message,
     )
 
 
 async def _show_user_unavailable(
-    *,
     message: Message,
     state: FSMContext,
+    renderer: TelegramScreenRenderer,
 ) -> None:
-    await state.clear()
-    await message.answer(
-        USER_SELECTION_UNAVAILABLE_TEXT,
-        reply_markup=build_single_button_keyboard(build_menu_button()),
+    await clear_flow_context(state)
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=USER_SELECTION_UNAVAILABLE_TEXT,
+        reply_markup=build_inline_keyboard((build_menu_button(),)),
+        editable_message=message,
     )
 
 
 async def _show_permission_denied(
+    message: Message,
+    state: FSMContext,
+    renderer: TelegramScreenRenderer,
+) -> None:
+    await clear_flow_context(state)
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT,
+        reply_markup=build_inline_keyboard((build_menu_button(),)),
+        editable_message=message,
+    )
+
+
+async def _render_admin_screen(
     *,
     message: Message,
     state: FSMContext,
+    renderer: TelegramScreenRenderer,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+    editable_message: Message | None = None,
 ) -> None:
-    await state.clear()
-    await message.answer(
-        ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT,
-        reply_markup=build_single_button_keyboard(build_menu_button()),
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=TelegramScreen(
+            text=text,
+            reply_markup=reply_markup,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+        editable_message=editable_message,
+    )
+
+
+async def _set_admin_navigation(state: FSMContext) -> None:
+    await set_navigation_context(
+        state,
+        NavigationContext(
+            root_screen=RootScreen.ROLE_PANEL,
+            active_role=RolePanel.ADMINISTRATOR.value,
+        ),
     )
 
 
