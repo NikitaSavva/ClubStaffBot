@@ -30,6 +30,11 @@ class BannerContext(StrEnum):
     ATHLETE_PANEL = "athlete_panel"
 
 
+class RenderMode(StrEnum):
+    EDIT = "edit"
+    NEW = "new"
+
+
 @dataclass(frozen=True, slots=True)
 class BannerFileIds:
     role_selector: str | None = None
@@ -93,12 +98,18 @@ class TelegramScreenRenderer:
         state: FSMContext,
         chat_id: int,
         screen: TelegramScreen,
+        mode: RenderMode = RenderMode.EDIT,
         editable_message: Message | None = None,
     ) -> ActiveUiMessage:
         resolved = self._resolve(screen)
         active = await get_active_ui_message(state)
         if active is None and editable_message is not None:
             active = self._active_from_message(editable_message)
+
+        if mode is RenderMode.NEW:
+            if active is not None:
+                await self._clear_keyboard(active)
+            return await self._send(state, chat_id, resolved)
 
         if active is None:
             return await self._send(state, chat_id, resolved)
@@ -233,6 +244,34 @@ class TelegramScreenRenderer:
         )
         await set_active_ui_message(state, active)
         return active
+
+    async def _clear_keyboard(self, active: ActiveUiMessage) -> None:
+        if active.keyboard_fingerprint == _keyboard_fingerprint(None):
+            return
+        try:
+            await self._bot.edit_message_reply_markup(
+                chat_id=active.chat_id,
+                message_id=active.message_id,
+                reply_markup=None,
+            )
+        except TelegramBadRequest as error:
+            if _is_message_not_modified(error):
+                return
+            self._log_keyboard_clear_failure(active, error)
+        except TelegramAPIError as error:
+            self._log_keyboard_clear_failure(active, error)
+
+    @staticmethod
+    def _log_keyboard_clear_failure(
+        active: ActiveUiMessage,
+        error: TelegramAPIError,
+    ) -> None:
+        logger.warning(
+            "telegram_screen_keyboard_clear_failed",
+            chat_id=active.chat_id,
+            message_id=active.message_id,
+            error_type=type(error).__name__,
+        )
 
     async def _fallback_send(
         self,

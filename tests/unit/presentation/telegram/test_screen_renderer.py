@@ -17,6 +17,7 @@ from presentation.telegram.keyboards.layout import (
 from presentation.telegram.screen import (
     BannerContext,
     BannerFileIds,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
@@ -56,6 +57,69 @@ def make_renderer() -> tuple[TelegramScreenRenderer, AsyncMock]:
         ),
     )
     return renderer, bot_mock
+
+
+async def test_edit_mode_edits_active_screen() -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    bot.send_message.return_value = bot_message(5)
+
+    previous = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(text="Initial"),
+    )
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(text="Updated"),
+        mode=RenderMode.EDIT,
+    )
+
+    assert bot.send_message.await_count == 1
+    bot.edit_message_text.assert_awaited_once()
+    assert active.message_id == previous.message_id
+    assert await get_active_ui_message(state) == active
+
+
+async def test_new_mode_clears_keyboard_and_sends_new_active_screen() -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    bot.send_photo.side_effect = [bot_message(6), bot_message(7)]
+    keyboard = build_inline_keyboard(
+        (build_callback_button(text="Start", callback_data="start"),)
+    )
+
+    previous = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Admin panel",
+            reply_markup=keyboard,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+    )
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Input prompt",
+            reply_markup=keyboard,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+        mode=RenderMode.NEW,
+    )
+
+    assert bot.send_photo.await_count == 2
+    bot.edit_message_reply_markup.assert_awaited_once_with(
+        chat_id=CHAT_ID,
+        message_id=previous.message_id,
+        reply_markup=None,
+    )
+    bot.edit_message_caption.assert_not_awaited()
+    assert active.message_id == 7
+    assert active.message_id != previous.message_id
+    assert await get_active_ui_message(state) == active
 
 
 async def test_text_to_media_sends_replacement_screen() -> None:

@@ -5,10 +5,12 @@ from uuid import uuid4
 
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageCaption,
     EditMessageMedia,
+    EditMessageReplyMarkup,
     SendPhoto,
     TelegramMethod,
 )
@@ -37,9 +39,11 @@ from infrastructure.database.models import (
 from presentation.telegram.handlers.role_management import (
     ASSIGN_ROLE_PREFIX,
     BEGIN_ASSIGN_ROLE_PREFIX,
+    ENTER_USER_QUERY_TEXT,
     MANAGE_USERS_ACTION,
     ROLE_ASSIGNED_TEXT,
     SELECT_USER_PREFIX,
+    SELECT_USER_TEXT,
     USER_ROLE_CONTEXT_TEXT,
     USER_SELECTION_UNAVAILABLE_TEXT,
 )
@@ -194,6 +198,17 @@ def keyboard_callbacks(message: ScreenSnapshot) -> set[str | None]:
     }
 
 
+def sent_message_id(
+    methods: list[TelegramMethod[Any]],
+    target: TelegramMethod[Any],
+) -> int:
+    return next(
+        index
+        for index, method in enumerate(methods, start=1)
+        if method is target
+    )
+
+
 async def test_administrator_assigns_role_through_telegram_flow(
     integration_settings: Settings,
     monkeypatch: Any,
@@ -271,7 +286,15 @@ async def test_administrator_assigns_role_through_telegram_flow(
         assert MANAGE_USERS_ACTION in keyboard_callbacks(
             last_message_with_keyboard(sent_methods)
         )
+        menu_screen = next(
+            method
+            for method in sent_methods
+            if isinstance(method, SendPhoto)
+            and method.chat_id == admin_telegram_id
+        )
+        menu_message_id = sent_message_id(sent_methods, menu_screen)
 
+        begin_search_offset = len(sent_methods)
         await dispatcher.feed_update(
             bot,
             callback_update(
@@ -280,6 +303,33 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 data=MANAGE_USERS_ACTION,
             ),
         )
+        begin_search_methods = sent_methods[begin_search_offset:]
+        begin_search_answer = next(
+            method
+            for method in begin_search_methods
+            if isinstance(method, AnswerCallbackQuery)
+        )
+        menu_keyboard_cleanup = next(
+            method
+            for method in begin_search_methods
+            if isinstance(method, EditMessageReplyMarkup)
+        )
+        prompt_screen = next(
+            method
+            for method in begin_search_methods
+            if isinstance(method, SendPhoto)
+        )
+        prompt_message_id = sent_message_id(sent_methods, prompt_screen)
+        assert begin_search_methods.index(
+            begin_search_answer
+        ) < begin_search_methods.index(menu_keyboard_cleanup)
+        assert menu_keyboard_cleanup.message_id == menu_message_id
+        assert menu_keyboard_cleanup.reply_markup is None
+        assert prompt_message_id != menu_message_id
+        assert prompt_screen.caption == ENTER_USER_QUERY_TEXT
+        assert prompt_screen.photo == "admin-banner-file-id"
+
+        search_result_offset = len(sent_methods)
         await dispatcher.feed_update(
             bot,
             message_update(
@@ -288,6 +338,23 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 text=suffix,
             ),
         )
+        search_result_methods = sent_methods[search_result_offset:]
+        prompt_keyboard_cleanup = next(
+            method
+            for method in search_result_methods
+            if isinstance(method, EditMessageReplyMarkup)
+        )
+        result_screen = next(
+            method
+            for method in search_result_methods
+            if isinstance(method, SendPhoto)
+        )
+        result_message_id = sent_message_id(sent_methods, result_screen)
+        assert prompt_keyboard_cleanup.message_id == prompt_message_id
+        assert prompt_keyboard_cleanup.reply_markup is None
+        assert result_message_id != prompt_message_id
+        assert result_screen.caption == SELECT_USER_TEXT
+        assert result_screen.photo == "admin-banner-file-id"
         search_message = last_message_with_keyboard(sent_methods)
         assert f"{SELECT_USER_PREFIX}{target.id}" in keyboard_callbacks(
             search_message
@@ -488,12 +555,22 @@ async def test_administrator_assigns_role_through_telegram_flow(
             if isinstance(method, SendPhoto)
             and method.chat_id == admin_telegram_id
         ]
-        assert len(admin_sends) == 1
+        assert len(admin_sends) == 3
         assert all(
-            method.message_id == 1
+            method.message_id == result_message_id
             for method in sent_methods
             if isinstance(method, (EditMessageCaption, EditMessageMedia))
             and method.chat_id == admin_telegram_id
+        )
+        admin_storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=admin_sender.id,
+            user_id=admin_sender.id,
+        )
+        admin_state_data = await dispatcher.storage.get_data(admin_storage_key)
+        assert (
+            admin_state_data["ui_context"]["active_message"]["message_id"]
+            == result_message_id
         )
         first_answer = next(
             method

@@ -35,6 +35,7 @@ from presentation.telegram.navigation import (
 from presentation.telegram.presenters import RolePanel
 from presentation.telegram.screen import (
     BannerContext,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
@@ -161,6 +162,7 @@ async def handle_begin_user_search(
         renderer=renderer,
         text=ENTER_USER_QUERY_TEXT,
         reply_markup=build_inline_keyboard((build_cancel_button(),)),
+        mode=RenderMode.NEW,
         editable_message=message,
     )
 
@@ -221,6 +223,7 @@ async def handle_search_bot_users(
             renderer=renderer,
             text=INVALID_USER_QUERY_TEXT,
             reply_markup=build_inline_keyboard((build_cancel_button(),)),
+            mode=RenderMode.NEW,
         )
         return
 
@@ -236,6 +239,7 @@ async def handle_search_bot_users(
             message=message,
             state=state,
             renderer=renderer,
+            mode=RenderMode.NEW,
         )
         return
 
@@ -248,6 +252,7 @@ async def handle_search_bot_users(
             renderer=renderer,
             text=NO_USERS_FOUND_TEXT,
             reply_markup=build_inline_keyboard((build_cancel_button(),)),
+            mode=RenderMode.NEW,
         )
         return
     await _show_users_list(
@@ -255,6 +260,7 @@ async def handle_search_bot_users(
         state=state,
         result=result,
         renderer=renderer,
+        mode=RenderMode.NEW,
     )
 
 
@@ -651,6 +657,7 @@ async def _show_users_list(
     result: SearchBotUsersResult,
     renderer: TelegramScreenRenderer,
     *,
+    mode: RenderMode = RenderMode.EDIT,
     editable_message: Message | None = None,
 ) -> None:
     await state.set_state(RoleManagementStates.waiting_for_user_selection)
@@ -660,6 +667,7 @@ async def _show_users_list(
         renderer=renderer,
         text=SELECT_USER_TEXT,
         reply_markup=build_user_selection_keyboard(result.users),
+        mode=mode,
         editable_message=editable_message,
     )
 
@@ -707,6 +715,8 @@ async def _show_permission_denied(
     message: Message,
     state: FSMContext,
     renderer: TelegramScreenRenderer,
+    *,
+    mode: RenderMode = RenderMode.EDIT,
 ) -> None:
     await clear_flow_context(state)
     await _render_admin_screen(
@@ -715,6 +725,7 @@ async def _show_permission_denied(
         renderer=renderer,
         text=ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT,
         reply_markup=build_inline_keyboard((build_menu_button(),)),
+        mode=mode,
         editable_message=message,
     )
 
@@ -726,6 +737,7 @@ async def _render_admin_screen(
     renderer: TelegramScreenRenderer,
     text: str,
     reply_markup: InlineKeyboardMarkup | None,
+    mode: RenderMode = RenderMode.EDIT,
     editable_message: Message | None = None,
 ) -> None:
     await renderer.render(
@@ -736,6 +748,7 @@ async def _render_admin_screen(
             reply_markup=reply_markup,
             banner=BannerContext.ADMIN_PANEL,
         ),
+        mode=mode,
         editable_message=editable_message,
     )
 

@@ -1,5 +1,5 @@
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from dishka.integrations.aiogram import FromDishka, inject
@@ -15,17 +15,22 @@ from application.identity.errors import (
 )
 from domain.identity import AthleteFirstNameRequiredError
 from presentation.telegram.handlers.menu import show_active_role_panel
-from presentation.telegram.keyboards.layout import build_inline_keyboard
+from presentation.telegram.keyboards.layout import (
+    build_callback_button,
+    build_inline_keyboard,
+)
 from presentation.telegram.navigation import (
     NavigationAction,
     NavigationCallback,
     NavigationTarget,
+    build_back_button,
     build_cancel_button,
     build_menu_button,
 )
 from presentation.telegram.presenters import RolePanel
 from presentation.telegram.screen import (
     BannerContext,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
@@ -34,18 +39,46 @@ from presentation.telegram.ui_context import (
     NavigationContext,
     RootScreen,
     clear_flow_context,
+    get_flow_context,
     set_flow_context,
     set_navigation_context,
 )
 
 CREATE_ATHLETE_ACTION = "administrator.create_athlete"
-ENTER_FIRST_NAME_TEXT = "Введите имя спортсмена без фамилии."
-INVALID_FIRST_NAME_TEXT = "Имя не может быть пустым. Введите имя еще раз."
+CONFIRM_CREATE_ATHLETE_ACTION = "administrator.create_athlete:confirm"
+CREATE_ATHLETE_TITLE = "Добавление спортсмена"
+ENTER_FIRST_NAME_TEXT = (
+    f"{CREATE_ATHLETE_TITLE}\n\nВведите имя спортсмена без фамилии."
+)
+INVALID_FIRST_NAME_TEXT = (
+    f"{CREATE_ATHLETE_TITLE}\n\n"
+    "Имя не может быть пустым. Введите имя еще раз."
+)
+CONFIRM_CREATE_ATHLETE_TEXT = (
+    f"{CREATE_ATHLETE_TITLE}\n\n"
+    "Имя: {first_name}\n\n"
+    "Проверьте данные."
+)
 CREATE_ATHLETE_CANCELLED_TEXT = "Создание спортсмена отменено."
 CREATE_ATHLETE_PERMISSION_DENIED_TEXT = (
     "Действие доступно только администратору."
 )
 CREATE_ATHLETE_SUCCESS_TEXT = "Спортсмен {first_name} создан."
+
+
+def build_create_athlete_confirmation_keyboard() -> InlineKeyboardMarkup:
+    return build_inline_keyboard(
+        (
+            build_callback_button(
+                text="Создать",
+                callback_data=CONFIRM_CREATE_ATHLETE_ACTION,
+            ),
+        ),
+        (
+            build_back_button(NavigationTarget.CREATE_ATHLETE_FIRST_NAME),
+            build_cancel_button(),
+        ),
+    )
 
 
 @inject
@@ -69,6 +102,7 @@ async def handle_begin_create_athlete(
             ENTER_FIRST_NAME_TEXT,
             build_inline_keyboard((build_cancel_button(),)),
         ),
+        mode=RenderMode.NEW,
         editable_message=message,
     )
 
@@ -117,7 +151,6 @@ async def handle_cancel_create_athlete_callback(
 async def handle_create_athlete_first_name(
     message: Message,
     state: FSMContext,
-    interactor: FromDishka[CreateManualAthleteInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
@@ -130,17 +163,65 @@ async def handle_create_athlete_first_name(
                 INVALID_FIRST_NAME_TEXT,
                 build_inline_keyboard((build_cancel_button(),)),
             ),
+            mode=RenderMode.NEW,
         )
         return
 
-    try:
-        result = await interactor(
-            CreateManualAthleteCommand(
-                actor_telegram_id=telegram_user.id,
-                first_name=first_name,
-            )
-        )
-    except AthleteFirstNameRequiredError:
+    await set_flow_context(state, {"first_name": first_name})
+    await state.set_state(CreateAthleteStates.waiting_for_confirmation)
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=_admin_screen(
+            CONFIRM_CREATE_ATHLETE_TEXT.format(first_name=first_name),
+            build_create_athlete_confirmation_keyboard(),
+        ),
+        mode=RenderMode.NEW,
+    )
+
+
+@inject
+async def handle_back_to_create_athlete_first_name(
+    callback: CallbackQuery,
+    state: FSMContext,
+    renderer: FromDishka[TelegramScreenRenderer],
+) -> None:
+    await callback.answer()
+    message = callback.message
+    if not isinstance(message, Message):
+        return
+
+    await set_flow_context(state, {})
+    await state.set_state(CreateAthleteStates.waiting_for_first_name)
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=_admin_screen(
+            ENTER_FIRST_NAME_TEXT,
+            build_inline_keyboard((build_cancel_button(),)),
+        ),
+        mode=RenderMode.EDIT,
+        editable_message=message,
+    )
+
+
+@inject
+async def handle_confirm_create_athlete(
+    callback: CallbackQuery,
+    state: FSMContext,
+    interactor: FromDishka[CreateManualAthleteInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
+) -> None:
+    await callback.answer()
+    message = callback.message
+    if not isinstance(message, Message):
+        return
+
+    flow_context = await get_flow_context(state)
+    first_name = flow_context.get("first_name")
+    if not isinstance(first_name, str) or not first_name:
+        await set_flow_context(state, {})
+        await state.set_state(CreateAthleteStates.waiting_for_first_name)
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
@@ -148,6 +229,30 @@ async def handle_create_athlete_first_name(
                 INVALID_FIRST_NAME_TEXT,
                 build_inline_keyboard((build_cancel_button(),)),
             ),
+            mode=RenderMode.EDIT,
+            editable_message=message,
+        )
+        return
+
+    try:
+        result = await interactor(
+            CreateManualAthleteCommand(
+                actor_telegram_id=callback.from_user.id,
+                first_name=first_name,
+            )
+        )
+    except AthleteFirstNameRequiredError:
+        await set_flow_context(state, {})
+        await state.set_state(CreateAthleteStates.waiting_for_first_name)
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=_admin_screen(
+                INVALID_FIRST_NAME_TEXT,
+                build_inline_keyboard((build_cancel_button(),)),
+            ),
+            mode=RenderMode.EDIT,
+            editable_message=message,
         )
         return
     except (AdministratorPermissionRequiredError, UserNotFoundError):
@@ -159,6 +264,8 @@ async def handle_create_athlete_first_name(
                 CREATE_ATHLETE_PERMISSION_DENIED_TEXT,
                 build_inline_keyboard((build_menu_button(),)),
             ),
+            mode=RenderMode.EDIT,
+            editable_message=message,
         )
         return
 
@@ -170,6 +277,8 @@ async def handle_create_athlete_first_name(
             CREATE_ATHLETE_SUCCESS_TEXT.format(first_name=result.first_name),
             build_inline_keyboard((build_menu_button(),)),
         ),
+        mode=RenderMode.EDIT,
+        editable_message=message,
     )
 
 
@@ -211,7 +320,7 @@ def create_athlete_creation_router() -> Router:
     router.message.register(
         handle_cancel_create_athlete,
         Command("cancel"),
-        CreateAthleteStates.waiting_for_first_name,
+        StateFilter(CreateAthleteStates),
     )
     router.callback_query.register(
         handle_cancel_create_athlete_callback,
@@ -219,7 +328,20 @@ def create_athlete_creation_router() -> Router:
             (F.action == NavigationAction.CANCEL)
             & (F.target == NavigationTarget.ROLE_PANEL)
         ),
-        CreateAthleteStates.waiting_for_first_name,
+        StateFilter(CreateAthleteStates),
+    )
+    router.callback_query.register(
+        handle_back_to_create_athlete_first_name,
+        NavigationCallback.filter(
+            (F.action == NavigationAction.BACK)
+            & (F.target == NavigationTarget.CREATE_ATHLETE_FIRST_NAME)
+        ),
+        CreateAthleteStates.waiting_for_confirmation,
+    )
+    router.callback_query.register(
+        handle_confirm_create_athlete,
+        F.data == CONFIRM_CREATE_ATHLETE_ACTION,
+        CreateAthleteStates.waiting_for_confirmation,
     )
     router.message.register(
         handle_create_athlete_first_name,
