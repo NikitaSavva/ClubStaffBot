@@ -25,6 +25,7 @@ class NavigationTarget(StrEnum):
     USERS_LIST = "users"
     USER_PROFILE = "user"
     ATHLETE_LINK_LIST = "athlete_link"
+    CREATE_ATHLETE_FIRST_NAME = "create_athlete_first_name"
 
 
 class NavigationCallback(CallbackData, prefix="navigation"):
