@@ -8,7 +8,6 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
-    DeleteMessage,
     EditMessageCaption,
     EditMessageMedia,
     EditMessageReplyMarkup,
@@ -20,7 +19,6 @@ from aiogram.types import (
     Chat,
     InlineKeyboardMarkup,
     Message,
-    ReplyKeyboardMarkup,
     Update,
     User,
 )
@@ -285,34 +283,36 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 text="/menu",
             ),
         )
+        assert MANAGE_USERS_ACTION in keyboard_callbacks(
+            last_message_with_keyboard(sent_methods)
+        )
         menu_screen = next(
             method
             for method in sent_methods
             if isinstance(method, SendPhoto)
             and method.chat_id == admin_telegram_id
-            and isinstance(method.reply_markup, ReplyKeyboardMarkup)
-        )
-        assert any(
-            button.text == "Пользователи"
-            for row in menu_screen.reply_markup.keyboard
-            for button in row
         )
         menu_message_id = sent_message_id(sent_methods, menu_screen)
 
         begin_search_offset = len(sent_methods)
         await dispatcher.feed_update(
             bot,
-            message_update(
+            callback_update(
                 update_id=2,
                 sender=admin_sender,
-                text="Пользователи",
+                data=MANAGE_USERS_ACTION,
             ),
         )
         begin_search_methods = sent_methods[begin_search_offset:]
-        navigation_cleanup = next(
+        begin_search_answer = next(
             method
             for method in begin_search_methods
-            if isinstance(method, DeleteMessage)
+            if isinstance(method, AnswerCallbackQuery)
+        )
+        menu_keyboard_cleanup = next(
+            method
+            for method in begin_search_methods
+            if isinstance(method, EditMessageReplyMarkup)
         )
         prompt_screen = next(
             method
@@ -321,9 +321,10 @@ async def test_administrator_assigns_role_through_telegram_flow(
         )
         prompt_message_id = sent_message_id(sent_methods, prompt_screen)
         assert begin_search_methods.index(
-            navigation_cleanup
-        ) < begin_search_methods.index(prompt_screen)
-        assert navigation_cleanup.message_id == 2
+            begin_search_answer
+        ) < begin_search_methods.index(menu_keyboard_cleanup)
+        assert menu_keyboard_cleanup.message_id == menu_message_id
+        assert menu_keyboard_cleanup.reply_markup is None
         assert prompt_message_id != menu_message_id
         assert prompt_screen.caption == ENTER_USER_QUERY_TEXT
         assert prompt_screen.photo == "admin-banner-file-id"
@@ -376,7 +377,6 @@ async def test_administrator_assigns_role_through_telegram_flow(
             f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}"
             in keyboard_callbacks(context_message)
         )
-        assert MANAGE_USERS_ACTION not in keyboard_callbacks(context_message)
 
         await dispatcher.feed_update(
             bot,
@@ -540,18 +540,8 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 text="/menu",
             ),
         )
-        target_selector_edit = next(
-            method
-            for method in reversed(sent_methods)
-            if isinstance(method, EditMessageReplyMarkup)
-            and method.chat_id == second_target_sender.id
-            and isinstance(method.reply_markup, InlineKeyboardMarkup)
-        )
         target_menu_callbacks = keyboard_callbacks(
-            ScreenSnapshot(
-                text="Выберите раздел:",
-                reply_markup=target_selector_edit.reply_markup,
-            )
+            last_message_with_keyboard(sent_methods)
         )
         assert RolePanelCallback(
             role=RolePanel.ATHLETE
@@ -720,13 +710,9 @@ async def test_stale_user_callback_returns_controlled_menu_path(
                 data=menu_callback,
             ),
         )
-        returned_panel = next(
-            method
-            for method in reversed(sent_methods)
-            if isinstance(method, SendPhoto)
-            and method.caption == "Панель администратора"
-            and isinstance(method.reply_markup, ReplyKeyboardMarkup)
+        assert (
+            last_message_with_keyboard(sent_methods).text
+            == "Панель администратора"
         )
-        assert returned_panel.photo == "admin-banner-file-id"
     finally:
         await container.close()

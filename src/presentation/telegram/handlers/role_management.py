@@ -153,34 +153,17 @@ async def handle_begin_user_search(
     if not isinstance(message, Message):
         return
 
-    await begin_user_search_flow(
-        chat_id=message.chat.id,
-        state=state,
-        renderer=renderer,
-        editable_message=message,
-    )
-
-
-async def begin_user_search_flow(
-    *,
-    chat_id: int,
-    state: FSMContext,
-    renderer: TelegramScreenRenderer,
-    editable_message: Message | None = None,
-) -> None:
     await _set_admin_navigation(state)
     await set_flow_context(state, {})
     await state.set_state(RoleManagementStates.waiting_for_query)
-    await renderer.render(
+    await _render_admin_screen(
+        message=message,
         state=state,
-        chat_id=chat_id,
-        screen=TelegramScreen(
-            text=ENTER_USER_QUERY_TEXT,
-            reply_markup=build_inline_keyboard((build_cancel_button(),)),
-            banner=BannerContext.ADMIN_PANEL,
-        ),
+        renderer=renderer,
+        text=ENTER_USER_QUERY_TEXT,
+        reply_markup=build_inline_keyboard((build_cancel_button(),)),
         mode=RenderMode.NEW,
-        editable_message=editable_message,
+        editable_message=message,
     )
 
 

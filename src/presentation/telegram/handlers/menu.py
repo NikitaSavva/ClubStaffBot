@@ -1,9 +1,7 @@
-from dataclasses import replace
-
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message
 from dishka.integrations.aiogram import FromDishka, inject
 
 from application.identity import (
@@ -12,7 +10,6 @@ from application.identity import (
     MenuContext,
 )
 from application.identity.errors import UserHasNoRolesError, UserNotFoundError
-from presentation.telegram.keyboards.role import RoleReplyKeyboardBuilder
 from presentation.telegram.navigation import (
     NavigationAction,
     NavigationCallback,
@@ -44,8 +41,6 @@ USER_NOT_REGISTERED_TEXT = (
 )
 MENU_UNAVAILABLE_TEXT = "Для вашей учетной записи пока нет доступного меню."
 
-_role_reply_keyboard_builder = RoleReplyKeyboardBuilder()
-
 
 @inject
 async def handle_menu(
@@ -60,10 +55,7 @@ async def handle_menu(
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
-            screen=replace(
-                _unregistered_screen(),
-                role_reply_markup=ReplyKeyboardRemove(),
-            ),
+            screen=_unregistered_screen(),
         )
         return
 
@@ -86,7 +78,7 @@ async def show_home_screen(
     editable_message: Message | None = None,
     notice: str | None = None,
 ) -> None:
-    context = await load_menu_context(
+    context = await _load_menu_context(
         telegram_id=telegram_id,
         interactor=interactor,
     )
@@ -101,10 +93,7 @@ async def show_home_screen(
         await renderer.render(
             state=state,
             chat_id=chat_id,
-            screen=replace(
-                _unregistered_screen(),
-                role_reply_markup=ReplyKeyboardRemove(),
-            ),
+            screen=_unregistered_screen(),
             editable_message=editable_message,
         )
         return
@@ -119,10 +108,7 @@ async def show_home_screen(
         await renderer.render(
             state=state,
             chat_id=chat_id,
-            screen=replace(
-                _menu_unavailable_screen(),
-                role_reply_markup=ReplyKeyboardRemove(),
-            ),
+            screen=_menu_unavailable_screen(),
             editable_message=editable_message,
         )
         return
@@ -147,12 +133,13 @@ async def show_home_screen(
             active_role=None,
         ),
     )
-    screen = replace(
-        build_role_selector_screen(context),
-        role_reply_markup=ReplyKeyboardRemove(),
-    )
+    screen = build_role_selector_screen(context)
     if notice:
-        screen = replace(screen, text=f"{notice}\n\n{screen.text}")
+        screen = TelegramScreen(
+            text=f"{notice}\n\n{screen.text}",
+            reply_markup=screen.reply_markup,
+            banner=screen.banner,
+        )
     await renderer.render(
         state=state,
         chat_id=chat_id,
@@ -172,7 +159,7 @@ async def show_role_panel(
     editable_message: Message | None = None,
     notice: str | None = None,
 ) -> None:
-    context = await load_menu_context(
+    context = await _load_menu_context(
         telegram_id=telegram_id,
         interactor=interactor,
     )
@@ -388,19 +375,17 @@ async def _render_role_panel(
     await renderer.render(
         state=state,
         chat_id=chat_id,
-        screen=replace(
-            build_role_panel_screen(role, notice=notice),
-            role_reply_markup=_role_reply_keyboard_builder.build(
-                context,
-                role,
-                is_multi_role=len(roles) > 1,
-            ),
+        screen=build_role_panel_screen(
+            context,
+            role,
+            show_role_selector_back=len(roles) > 1,
+            notice=notice,
         ),
         editable_message=editable_message,
     )
 
 
-async def load_menu_context(
+async def _load_menu_context(
     *,
     telegram_id: int,
     interactor: GetUserMenuContextInteractor,

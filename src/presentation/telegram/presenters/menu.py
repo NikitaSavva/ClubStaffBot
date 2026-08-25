@@ -2,11 +2,16 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from aiogram.filters.callback_data import CallbackData
+from aiogram.types import InlineKeyboardButton
 
-from application.identity import MenuContext
+from application.identity import MenuContext, MenuItem
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
+)
+from presentation.telegram.navigation import (
+    NavigationTarget,
+    build_back_button,
 )
 from presentation.telegram.screen import BannerContext, TelegramScreen
 
@@ -83,16 +88,42 @@ def build_role_selector_screen(context: MenuContext) -> TelegramScreen:
 
 
 def build_role_panel_screen(
+    context: MenuContext,
     role: RolePanel,
     *,
+    show_role_selector_back: bool,
     notice: str | None = None,
 ) -> TelegramScreen:
     presentation = _presentation_for(role)
+    items = {
+        item.action_id: item
+        for item in context.items
+        if item.action_id.startswith(f"{role.value}.")
+    }
+    rows: list[tuple[InlineKeyboardButton, ...]] = []
+    if role is RolePanel.ADMINISTRATOR:
+        primary = items.get("administrator.create_athlete")
+        if primary is not None:
+            rows.append((_menu_item_button(primary),))
+        related = tuple(
+            _menu_item_button(item)
+            for action_id in (
+                "administrator.manage_users",
+                "administrator.link_athlete_account",
+            )
+            if (item := items.get(action_id)) is not None
+        )
+        if related:
+            rows.append(related)
+    if show_role_selector_back:
+        rows.append((build_back_button(NavigationTarget.ROLE_SELECTOR),))
+
     text = presentation.panel_title
     if notice:
         text = f"{notice}\n\n{text}"
     return TelegramScreen(
         text=text,
+        reply_markup=build_inline_keyboard(*rows),
         banner=presentation.banner,
     )
 
@@ -102,4 +133,11 @@ def _presentation_for(role: RolePanel) -> _RolePresentation:
         presentation
         for presentation in _ROLE_PRESENTATIONS
         if presentation.role is role
+    )
+
+
+def _menu_item_button(item: MenuItem) -> InlineKeyboardButton:
+    return build_callback_button(
+        text=item.title,
+        callback_data=item.action_id,
     )

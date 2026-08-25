@@ -11,17 +11,13 @@ from aiogram.types import (
     InputFile,
     InputMediaPhoto,
     Message,
-    ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 
 from presentation.telegram.ui_context import (
     ActiveUiMessage,
     UiMessageKind,
     get_active_ui_message,
-    get_role_reply_keyboard_fingerprint,
     set_active_ui_message,
-    set_role_reply_keyboard_fingerprint,
 )
 
 logger = structlog.get_logger()
@@ -60,7 +56,6 @@ class BannerFileIds:
 class TelegramScreen:
     text: str
     reply_markup: InlineKeyboardMarkup | None = None
-    role_reply_markup: ReplyKeyboardMarkup | ReplyKeyboardRemove | None = None
     banner: BannerContext | None = None
     media: str | InputFile | None = None
     media_key: str | None = None
@@ -76,7 +71,6 @@ class TelegramScreen:
 class _ResolvedScreen:
     text: str
     reply_markup: InlineKeyboardMarkup | None
-    role_reply_markup: ReplyKeyboardMarkup | ReplyKeyboardRemove | None
     media: str | InputFile | None
     media_key: str | None
     content_fingerprint: str
@@ -111,24 +105,6 @@ class TelegramScreenRenderer:
         active = await get_active_ui_message(state)
         if active is None and editable_message is not None:
             active = self._active_from_message(editable_message)
-
-        role_reply_markup = resolved.role_reply_markup
-        if role_reply_markup is not None:
-            desired_role_keyboard = _role_reply_keyboard_fingerprint(
-                role_reply_markup
-            )
-            current_role_keyboard = (
-                await get_role_reply_keyboard_fingerprint(state)
-            )
-            if current_role_keyboard != desired_role_keyboard:
-                if active is not None:
-                    await self._clear_keyboard(active)
-                return await self._send_with_role_reply_markup(
-                    state=state,
-                    chat_id=chat_id,
-                    screen=resolved,
-                    role_reply_keyboard_fingerprint=desired_role_keyboard,
-                )
 
         if mode is RenderMode.NEW:
             if active is not None:
@@ -176,7 +152,6 @@ class TelegramScreenRenderer:
         return _ResolvedScreen(
             text=screen.text,
             reply_markup=screen.reply_markup,
-            role_reply_markup=screen.role_reply_markup,
             media=media,
             media_key=media_key,
             content_fingerprint=_fingerprint(screen.text),
@@ -270,75 +245,6 @@ class TelegramScreenRenderer:
         await set_active_ui_message(state, active)
         return active
 
-    async def _send_with_role_reply_markup(
-        self,
-        *,
-        state: FSMContext,
-        chat_id: int,
-        screen: _ResolvedScreen,
-        role_reply_keyboard_fingerprint: str,
-    ) -> ActiveUiMessage:
-        role_reply_markup = screen.role_reply_markup
-        if role_reply_markup is None:
-            raise RuntimeError("Role reply markup is required")
-        if screen.media is None:
-            sent = await self._bot.send_message(
-                chat_id=chat_id,
-                text=screen.text,
-                reply_markup=role_reply_markup,
-            )
-        else:
-            sent = await self._bot.send_photo(
-                chat_id=chat_id,
-                photo=screen.media,
-                caption=screen.text,
-                reply_markup=role_reply_markup,
-            )
-
-        active = ActiveUiMessage(
-            chat_id=sent.chat.id,
-            message_id=sent.message_id,
-            kind=screen.kind,
-            media_key=screen.media_key,
-            content_fingerprint=screen.content_fingerprint,
-            keyboard_fingerprint=_keyboard_fingerprint(None),
-        )
-        await set_active_ui_message(state, active)
-        await set_role_reply_keyboard_fingerprint(
-            state,
-            role_reply_keyboard_fingerprint,
-        )
-        if screen.reply_markup is None:
-            return active
-
-        try:
-            await self._bot.edit_message_reply_markup(
-                chat_id=active.chat_id,
-                message_id=active.message_id,
-                reply_markup=screen.reply_markup,
-            )
-        except TelegramBadRequest as error:
-            if not _is_message_not_modified(error):
-                return await self._fallback_role_reply_inline_send(
-                    state=state,
-                    chat_id=chat_id,
-                    active=active,
-                    screen=screen,
-                    error=error,
-                )
-        except TelegramAPIError as error:
-            return await self._fallback_role_reply_inline_send(
-                state=state,
-                chat_id=chat_id,
-                active=active,
-                screen=screen,
-                error=error,
-            )
-
-        updated = self._updated_active(active, screen)
-        await set_active_ui_message(state, updated)
-        return updated
-
     async def _clear_keyboard(self, active: ActiveUiMessage) -> None:
         if active.keyboard_fingerprint == _keyboard_fingerprint(None):
             return
@@ -378,23 +284,6 @@ class TelegramScreenRenderer:
     ) -> ActiveUiMessage:
         logger.warning(
             "telegram_screen_edit_failed",
-            chat_id=active.chat_id,
-            message_id=active.message_id,
-            error_type=type(error).__name__,
-        )
-        return await self._send(state, chat_id, screen)
-
-    async def _fallback_role_reply_inline_send(
-        self,
-        *,
-        state: FSMContext,
-        chat_id: int,
-        active: ActiveUiMessage,
-        screen: _ResolvedScreen,
-        error: TelegramAPIError,
-    ) -> ActiveUiMessage:
-        logger.warning(
-            "telegram_role_reply_inline_edit_failed",
             chat_id=active.chat_id,
             message_id=active.message_id,
             error_type=type(error).__name__,
@@ -441,12 +330,6 @@ def _keyboard_fingerprint(
     return _fingerprint(
         reply_markup.model_dump_json(exclude_none=True)
     )
-
-
-def _role_reply_keyboard_fingerprint(
-    reply_markup: ReplyKeyboardMarkup | ReplyKeyboardRemove,
-) -> str:
-    return _fingerprint(reply_markup.model_dump_json(exclude_none=True))
 
 
 def _is_message_not_modified(error: TelegramBadRequest) -> bool:

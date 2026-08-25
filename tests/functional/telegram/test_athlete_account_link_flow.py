@@ -18,7 +18,6 @@ from aiogram.types import (
     Chat,
     InlineKeyboardMarkup,
     Message,
-    ReplyKeyboardMarkup,
     Update,
     User,
 )
@@ -211,10 +210,10 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
             method
             for method in sent_methods
             if isinstance(method, SendPhoto)
-            and isinstance(method.reply_markup, ReplyKeyboardMarkup)
+            and isinstance(method.reply_markup, InlineKeyboardMarkup)
             and any(
-                button.text == "Связать аккаунт"
-                for row in method.reply_markup.keyboard
+                button.callback_data == LINK_ACCOUNT_ACTION
+                for row in method.reply_markup.inline_keyboard
                 for button in row
             )
         )
@@ -222,10 +221,10 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
 
         await dispatcher.feed_update(
             bot,
-            command_update(
+            callback_update(
                 update_id=2,
                 sender=admin,
-                text="Связать аккаунт",
+                data=LINK_ACCOUNT_ACTION,
             ),
         )
         athlete_list_method = next(
