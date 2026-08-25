@@ -1,6 +1,11 @@
 from enum import StrEnum
 
 
+class TrainingGroupType(StrEnum):
+    REGULAR = "REGULAR"
+    MINI = "MINI"
+
+
 class TrainingSessionStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
     CANCELLED = "CANCELLED"

@@ -15,7 +15,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.database.models.base import Base
-from infrastructure.database.models.enums import TrainingSessionStatus
+from infrastructure.database.models.enums import (
+    TrainingGroupType,
+    TrainingSessionStatus,
+)
 from infrastructure.database.models.mixins import TimestampMixin
 
 
@@ -28,13 +31,23 @@ class SportDirectionModel(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean)
 
 
+class GroupNameModel(Base):
+    __tablename__ = "group_names"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True)
+
+
 class TrainingGroupModel(TimestampMixin, Base):
     __tablename__ = "training_groups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     direction_id: Mapped[int] = mapped_column(ForeignKey("sport_directions.id"))
-    trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    name: Mapped[str] = mapped_column(String)
+    trainer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    name_id: Mapped[int] = mapped_column(ForeignKey("group_names.id"))
+    group_type: Mapped[TrainingGroupType] = mapped_column(
+        Enum(TrainingGroupType, name="training_group_type")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean)
 
 

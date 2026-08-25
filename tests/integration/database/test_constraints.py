@@ -14,6 +14,7 @@ from infrastructure.database.models import (
     AttendanceStatus,
     Base,
     BotInviteModel,
+    GroupNameModel,
     NotificationModel,
     NotificationStatus,
     RoleModel,
@@ -23,6 +24,7 @@ from infrastructure.database.models import (
     SubscriptionPlanModel,
     SubscriptionStatus,
     TrainingGroupModel,
+    TrainingGroupType,
     TrainingSessionModel,
     TrainingSessionStatus,
     UserModel,
@@ -35,6 +37,7 @@ MVP_TABLES = {
     "attendances",
     "audit_log",
     "bot_invites",
+    "group_names",
     "notifications",
     "roles",
     "schedule_rules",
@@ -85,16 +88,21 @@ async def add_athlete(
 
 async def add_training_group(
     session: AsyncSession,
-    trainer_id: int,
+    trainer_id: int | None,
 ) -> TrainingGroupModel:
     direction = SportDirectionModel(code=f"direction-{uuid4()}", name="MMA", is_active=True)
     session.add(direction)
     await session.flush()
 
+    group_name = GroupNameModel(name=f"Morning group {uuid4()}")
+    session.add(group_name)
+    await session.flush()
+
     group = TrainingGroupModel(
         direction_id=direction.id,
         trainer_id=trainer_id,
-        name="Morning group",
+        name_id=group_name.id,
+        group_type=TrainingGroupType.REGULAR,
         is_active=True,
     )
     session.add(group)
@@ -325,6 +333,25 @@ async def test_training_session_rule_and_start_are_unique(
             trainer_id=trainer.id,
             schedule_rule_id=rule.id,
         )
+
+
+async def test_training_group_can_exist_without_trainer(
+    db_session: AsyncSession,
+) -> None:
+    group = await add_training_group(db_session, trainer_id=None)
+
+    assert group.trainer_id is None
+    assert group.group_type is TrainingGroupType.REGULAR
+
+
+async def test_group_name_is_unique(db_session: AsyncSession) -> None:
+    name = f"Shared group name {uuid4()}"
+    db_session.add(GroupNameModel(name=name))
+    await db_session.flush()
+
+    db_session.add(GroupNameModel(name=name))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
 
 
 async def test_two_active_subscriptions_for_one_athlete_are_rejected(

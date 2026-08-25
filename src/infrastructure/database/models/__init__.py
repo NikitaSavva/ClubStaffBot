@@ -6,6 +6,7 @@ from infrastructure.database.models.enums import (
     AttendanceStatus,
     NotificationStatus,
     SubscriptionStatus,
+    TrainingGroupType,
     TrainingSessionStatus,
 )
 from infrastructure.database.models.identity import (
@@ -21,6 +22,7 @@ from infrastructure.database.models.subscriptions import (
     SubscriptionPlanModel,
 )
 from infrastructure.database.models.training import (
+    GroupNameModel,
     ScheduleRuleModel,
     SportDirectionModel,
     TrainingGroupModel,
@@ -35,6 +37,7 @@ __all__ = [
     "AuditLogModel",
     "Base",
     "BotInviteModel",
+    "GroupNameModel",
     "NotificationModel",
     "NotificationStatus",
     "RoleModel",
@@ -43,6 +46,7 @@ __all__ = [
     "SubscriptionModel",
     "SubscriptionPlanModel",
     "SubscriptionStatus",
+    "TrainingGroupType",
     "TrainingGroupModel",
     "TrainingSessionModel",
     "TrainingSessionStatus",
