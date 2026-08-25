@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -117,7 +117,7 @@ async def add_administrator_and_unlinked_athlete(
     container: Any,
     *,
     telegram_id: int,
-) -> int:
+) -> tuple[int, int]:
     session_factory = await container.get(async_sessionmaker[AsyncSession])
     async with session_factory.begin() as session:
         role = await session.scalar(
@@ -149,12 +149,23 @@ async def add_administrator_and_unlinked_athlete(
             user_id=None,
             first_name="Иван",
             last_name="Иванов",
+            birth_date=date(1993, 8, 25),
             phone=None,
             is_active=True,
         )
         session.add(athlete)
         await session.flush()
-        return athlete.id
+        legacy_athlete = AthleteModel(
+            user_id=None,
+            first_name="Пётр",
+            last_name="Петров",
+            birth_date=None,
+            phone=None,
+            is_active=True,
+        )
+        session.add(legacy_athlete)
+        await session.flush()
+        return athlete.id, legacy_athlete.id
 
 
 async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
@@ -188,9 +199,11 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
     )
     try:
         await bootstrap_system_roles(container)
-        athlete_id = await add_administrator_and_unlinked_athlete(
+        athlete_id, legacy_athlete_id = (
+            await add_administrator_and_unlinked_athlete(
             container,
             telegram_id=admin_telegram_id,
+        )
         )
         session_factory = await container.get(
             async_sessionmaker[AsyncSession]
@@ -240,10 +253,18 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
             if button.callback_data
             == f"{SELECT_ATHLETE_PREFIX}{athlete_id}"
         )
-        assert athlete_button.text == "Иванов Иван"
+        assert athlete_button.text == "Иван Иванов (25.08.1993)"
         assert athlete_button.callback_data == (
             f"{SELECT_ATHLETE_PREFIX}{athlete_id}"
         )
+        legacy_button = next(
+            button
+            for row in athlete_list_method.reply_markup.inline_keyboard
+            for button in row
+            if button.callback_data
+            == f"{SELECT_ATHLETE_PREFIX}{legacy_athlete_id}"
+        )
+        assert legacy_button.text == "Пётр Петров"
 
         back_to_menu = NavigationCallback(
             action=NavigationAction.BACK,
@@ -270,7 +291,10 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
             for method in reversed(sent_methods)
             if isinstance(method, EditMessageCaption)
         )
-        assert returned_menu.caption == "Панель администратора"
+        assert returned_menu.caption == (
+            "Добавляйте спортсменов, связывайте их с Telegram и управляйте "
+            "ролями пользователей."
+        )
         async with session_factory() as session:
             invite_count_before_selection = await session.scalar(
                 select(func.count()).select_from(BotInviteModel)

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import TracebackType
 from typing import Self
 
@@ -13,12 +13,15 @@ from application.identity.errors import (
 )
 from domain.identity import (
     Athlete,
+    AthleteBirthDateRequiredError,
     AthleteFirstNameRequiredError,
+    AthleteLastNameRequiredError,
     SystemRoleCode,
     User,
 )
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+BIRTH_DATE = date(1993, 8, 25)
 
 
 class FakeUnitOfWork:
@@ -155,23 +158,37 @@ def build_interactor(
     )
 
 
+def manual_command(
+    *,
+    first_name: str = "Ирина",
+    last_name: str = "Иванова",
+    birth_date: date | None = BIRTH_DATE,
+) -> CreateManualAthleteCommand:
+    return CreateManualAthleteCommand(
+        actor_telegram_id=123456,
+        first_name=first_name,
+        last_name=last_name,
+        birth_date=birth_date,
+    )
+
+
 async def test_administrator_creates_only_unlinked_athlete_and_audit() -> None:
     interactor, users, athletes, roles, audit, uow = build_interactor()
 
     result = await interactor(
-        CreateManualAthleteCommand(
-            actor_telegram_id=123456,
-            first_name="  Ирина  ",
-        )
+        manual_command(first_name="  Ирина  ", last_name="  Иванова  ")
     )
 
     assert result.first_name == "Ирина"
+    assert result.last_name == "Иванова"
+    assert result.birth_date == BIRTH_DATE
     assert len(athletes.added) == 1
     athlete = athletes.added[0]
     assert athlete.user_id is None
     assert athlete.athlete_public_id.version == 4
     assert athlete.first_name == "Ирина"
-    assert athlete.last_name is None
+    assert athlete.last_name == "Иванова"
+    assert athlete.birth_date == BIRTH_DATE
     assert athlete.phone is None
     assert users.added == []
     assert roles.assignments == []
@@ -201,10 +218,7 @@ async def test_non_administrator_cannot_create_athlete(
 
     with pytest.raises(AdministratorPermissionRequiredError):
         await interactor(
-            CreateManualAthleteCommand(
-                actor_telegram_id=123456,
-                first_name="Ирина",
-            )
+            manual_command()
         )
 
     assert athletes.added == []
@@ -220,11 +234,30 @@ async def test_blank_name_does_not_create_audit_or_commit() -> None:
 
     with pytest.raises(AthleteFirstNameRequiredError):
         await interactor(
-            CreateManualAthleteCommand(
-                actor_telegram_id=123456,
-                first_name="   ",
-            )
+            manual_command(first_name="   ")
         )
+
+    assert athletes.added == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_blank_last_name_does_not_create_audit_or_commit() -> None:
+    interactor, _, athletes, _, audit, uow = build_interactor()
+
+    with pytest.raises(AthleteLastNameRequiredError):
+        await interactor(manual_command(last_name="   "))
+
+    assert athletes.added == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_missing_birth_date_does_not_create_audit_or_commit() -> None:
+    interactor, _, athletes, _, audit, uow = build_interactor()
+
+    with pytest.raises(AthleteBirthDateRequiredError):
+        await interactor(manual_command(birth_date=None))
 
     assert athletes.added == []
     assert audit.records == []
@@ -238,10 +271,7 @@ async def test_athlete_persistence_failure_does_not_audit_or_commit() -> None:
 
     with pytest.raises(RuntimeError, match="athlete persistence failed"):
         await interactor(
-            CreateManualAthleteCommand(
-                actor_telegram_id=123456,
-                first_name="Ирина",
-            )
+            manual_command()
         )
 
     assert athletes.added == []
@@ -256,10 +286,7 @@ async def test_audit_failure_does_not_commit() -> None:
 
     with pytest.raises(RuntimeError, match="audit persistence failed"):
         await interactor(
-            CreateManualAthleteCommand(
-                actor_telegram_id=123456,
-                first_name="Ирина",
-            )
+            manual_command()
         )
 
     assert len(athletes.added) == 1
@@ -269,10 +296,7 @@ async def test_audit_failure_does_not_commit() -> None:
 
 async def test_equal_names_do_not_trigger_deduplication() -> None:
     interactor, _, athletes, _, audit, uow = build_interactor()
-    command = CreateManualAthleteCommand(
-        actor_telegram_id=123456,
-        first_name="Ирина",
-    )
+    command = manual_command()
 
     await interactor(command)
     await interactor(command)

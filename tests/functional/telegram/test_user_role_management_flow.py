@@ -39,9 +39,12 @@ from infrastructure.database.models import (
 from presentation.telegram.handlers.role_management import (
     ASSIGN_ROLE_PREFIX,
     BEGIN_ASSIGN_ROLE_PREFIX,
+    BEGIN_REMOVE_ROLE_PREFIX,
     ENTER_USER_QUERY_TEXT,
     MANAGE_USERS_ACTION,
+    REMOVE_ROLE_PREFIX,
     ROLE_ASSIGNED_TEXT,
+    ROLE_REMOVED_TEXT,
     SELECT_USER_PREFIX,
     SELECT_USER_TEXT,
     USER_ROLE_CONTEXT_TEXT,
@@ -712,7 +715,174 @@ async def test_stale_user_callback_returns_controlled_menu_path(
         )
         assert (
             last_message_with_keyboard(sent_methods).text
-            == "Панель администратора"
+            == (
+                "Добавляйте спортсменов, связывайте их с Telegram и "
+                "управляйте ролями пользователей."
+            )
         )
+    finally:
+        await container.close()
+
+
+async def test_administrator_removes_role_through_telegram_flow(
+    integration_settings: Settings,
+    monkeypatch: Any,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    suffix = uuid4().hex[:8]
+    admin_sender = telegram_user(
+        27_000_000 + uuid4().int % 1_000_000_000,
+        first_name="Admin",
+        username=f"remove_admin_{suffix}",
+    )
+    target_sender = telegram_user(
+        28_000_000 + uuid4().int % 1_000_000_000,
+        first_name=f"RemoveTarget{suffix}",
+        username=f"remove_target_{suffix}",
+    )
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        async with session_factory.begin() as session:
+            administrator = await add_user_with_role(
+                session,
+                telegram_id=admin_sender.id,
+                username=admin_sender.username or "",
+                first_name=admin_sender.first_name,
+                role_code=SystemRoleCode.ADMINISTRATOR,
+            )
+            target = await add_user_with_role(
+                session,
+                telegram_id=target_sender.id,
+                username=target_sender.username or "",
+                first_name=target_sender.first_name,
+                role_code=SystemRoleCode.ATHLETE,
+            )
+            trainer_role = await role(session, SystemRoleCode.TRAINER)
+            session.add(
+                UserRoleModel(
+                    user_id=target.id,
+                    role_id=trainer_role.id,
+                    assigned_by_user_id=administrator.id,
+                    assigned_at=NOW,
+                )
+            )
+
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=1,
+                sender=admin_sender,
+                data=MANAGE_USERS_ACTION,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=2,
+                sender=admin_sender,
+                text=target_sender.first_name,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                sender=admin_sender,
+                data=f"{SELECT_USER_PREFIX}{target.id}",
+            ),
+        )
+        profile = last_message_with_keyboard(methods)
+        assert (
+            f"{BEGIN_REMOVE_ROLE_PREFIX}{target.id}"
+            in keyboard_callbacks(profile)
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                sender=admin_sender,
+                data=f"{BEGIN_REMOVE_ROLE_PREFIX}{target.id}",
+            ),
+        )
+        selection = last_message_with_keyboard(methods)
+        selection_callbacks = keyboard_callbacks(selection)
+        assert (
+            f"{REMOVE_ROLE_PREFIX}{target.id}:ATHLETE"
+            in selection_callbacks
+        )
+        assert (
+            f"{REMOVE_ROLE_PREFIX}{target.id}:TRAINER"
+            in selection_callbacks
+        )
+        assert not any(
+            callback is not None and callback.endswith(":ADMINISTRATOR")
+            for callback in selection_callbacks
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=5,
+                sender=admin_sender,
+                data=f"{REMOVE_ROLE_PREFIX}{target.id}:TRAINER",
+            ),
+        )
+        updated_profile = last_message_with_keyboard(methods)
+        assert updated_profile.text.startswith(
+            ROLE_REMOVED_TEXT.format(role="TRAINER")
+        )
+        assert "ATHLETE" in updated_profile.text
+        assert "TRAINER" not in updated_profile.text.split(
+            "Текущие роли:\n", maxsplit=1
+        )[-1]
+        assert (
+            f"{BEGIN_REMOVE_ROLE_PREFIX}{target.id}"
+            not in keyboard_callbacks(updated_profile)
+        )
+        assert (
+            f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}"
+            in keyboard_callbacks(updated_profile)
+        )
+
+        async with session_factory() as session:
+            role_codes = set(
+                await session.scalars(
+                    select(RoleModel.code)
+                    .join(
+                        UserRoleModel,
+                        UserRoleModel.role_id == RoleModel.id,
+                    )
+                    .where(UserRoleModel.user_id == target.id)
+                )
+            )
+            audit = await session.scalar(
+                select(AuditLogModel).where(
+                    AuditLogModel.action == "ROLE_REMOVED",
+                    AuditLogModel.actor_user_id == administrator.id,
+                    AuditLogModel.entity_id == target.id,
+                )
+            )
+        assert role_codes == {"ATHLETE"}
+        assert audit is not None
+        assert audit.payload == {"role_code": "TRAINER"}
+        assert audit.created_at is not None
     finally:
         await container.close()

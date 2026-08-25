@@ -8,6 +8,7 @@ from application.identity.commands import (
     CreateAthleteAccountLinkInviteCommand,
     LinkAthleteAccountCommand,
     RegisterBotUserCommand,
+    RemoveUserRoleCommand,
 )
 from application.identity.dto import (
     AssignUserRoleResult,
@@ -17,6 +18,7 @@ from application.identity.dto import (
     MenuContext,
     MenuItem,
     RegisterBotUserResult,
+    RemoveUserRoleResult,
     SearchBotUsersResult,
     UnlinkedAthlete,
 )
@@ -31,6 +33,7 @@ from application.identity.queries import (
 )
 from application.identity.role_management import (
     AssignUserRoleInteractor,
+    RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
 
@@ -54,6 +57,9 @@ __all__ = [
     "RegisterBotUserCommand",
     "RegisterBotUserInteractor",
     "RegisterBotUserResult",
+    "RemoveUserRoleCommand",
+    "RemoveUserRoleInteractor",
+    "RemoveUserRoleResult",
     "SearchBotUsersInteractor",
     "SearchBotUsersQuery",
     "SearchBotUsersResult",

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageMedia,
@@ -22,6 +23,7 @@ from bootstrap.startup import bootstrap_system_roles
 from domain.identity import SystemRoleCode
 from entrypoints.bot import create_dispatcher
 from infrastructure.database.models import RoleModel, UserModel, UserRoleModel
+from presentation.telegram.handlers.menu import USER_NOT_REGISTERED_TEXT
 from presentation.telegram.navigation import (
     BACK_BUTTON_TEXT,
     NavigationAction,
@@ -29,6 +31,7 @@ from presentation.telegram.navigation import (
     NavigationTarget,
 )
 from presentation.telegram.presenters import RolePanel, RolePanelCallback
+from presentation.telegram.states import CreateAthleteStates
 from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
@@ -127,7 +130,10 @@ async def add_user_with_roles(
     [
         (
             SystemRoleCode.ADMINISTRATOR,
-            "Панель администратора",
+            (
+                "Добавляйте спортсменов, связывайте их с Telegram и "
+                "управляйте ролями пользователей."
+            ),
             "admin-banner-file-id",
             [
                 [("Добавить спортсмена", "administrator.create_athlete")],
@@ -139,13 +145,13 @@ async def add_user_with_roles(
         ),
         (
             SystemRoleCode.TRAINER,
-            "Панель тренера",
+            "Для тренера пока нет доступных действий.",
             "trainer-banner-file-id",
             [],
         ),
         (
             SystemRoleCode.ATHLETE,
-            "Панель спортсмена",
+            "Для спортсмена пока нет доступных действий.",
             "athlete-banner-file-id",
             [],
         ),
@@ -284,3 +290,146 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
     assert len(answers) == 2
     assert methods.index(answers[0]) < methods.index(edits[0])
     assert methods.index(answers[1]) < methods.index(edits[1])
+
+
+@pytest.mark.parametrize("command", ["/start", "/menu", "/start stale-token"])
+@pytest.mark.parametrize(
+    ("role_codes", "expected_caption", "expected_banner"),
+    [
+        (
+            (SystemRoleCode.ADMINISTRATOR,),
+            (
+                "Добавляйте спортсменов, связывайте их с Telegram и "
+                "управляйте ролями пользователей."
+            ),
+            "admin-banner-file-id",
+        ),
+        (
+            (SystemRoleCode.ATHLETE, SystemRoleCode.TRAINER),
+            "Выберите роль, в которой хотите продолжить работу.",
+            "role-selector-banner-file-id",
+        ),
+    ],
+)
+async def test_registered_command_recovers_from_stale_fsm_and_ui_anchor(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    role_codes: tuple[SystemRoleCode, ...],
+    expected_caption: str,
+    expected_banner: str,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 8_000_000 + uuid4().int % 1_000_000_000
+    try:
+        await bootstrap_system_roles(container)
+        await add_user_with_roles(
+            container,
+            telegram_id=telegram_id,
+            role_codes=role_codes,
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            command_update(update_id=1, telegram_id=telegram_id, text="/start"),
+        )
+        assert len([item for item in methods if isinstance(item, SendPhoto)]) == 1
+
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=telegram_id,
+            user_id=telegram_id,
+        )
+        stale_data = await dispatcher.storage.get_data(storage_key)
+        stale_data["flow_context"] = {"first_name": "Не сохранять"}
+        await dispatcher.storage.set_data(storage_key, stale_data)
+        await dispatcher.storage.set_state(
+            storage_key,
+            CreateAthleteStates.waiting_for_first_name.state,
+        )
+
+        recovery_offset = len(methods)
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=2,
+                telegram_id=telegram_id,
+                text=command,
+            ),
+        )
+        recovery_methods = methods[recovery_offset:]
+        assert len(recovery_methods) == 1
+        recovered = recovery_methods[0]
+        assert isinstance(recovered, SendPhoto)
+        assert recovered.photo == expected_banner
+        assert recovered.caption == expected_caption
+
+        assert await dispatcher.storage.get_state(storage_key) is None
+        recovered_data = await dispatcher.storage.get_data(storage_key)
+        assert "flow_context" not in recovered_data
+        assert recovered_data["ui_context"]["active_message"][
+            "message_id"
+        ] == len(methods)
+    finally:
+        await container.close()
+
+
+@pytest.mark.parametrize("command", ["/start", "/menu"])
+async def test_unregistered_recovery_command_does_not_create_user(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 9_000_000 + uuid4().int % 1_000_000_000
+    try:
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=1,
+                telegram_id=telegram_id,
+                text=command,
+            ),
+        )
+        assert len(methods) == 1
+        method = methods[0]
+        assert isinstance(method, SendPhoto)
+        assert method.caption == USER_NOT_REGISTERED_TEXT
+
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        async with session_factory() as session:
+            user = await session.scalar(
+                select(UserModel).where(UserModel.telegram_id == telegram_id)
+            )
+        assert user is None
+    finally:
+        await container.close()

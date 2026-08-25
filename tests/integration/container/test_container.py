@@ -13,6 +13,7 @@ from application.identity import (
     LinkAthleteAccountInteractor,
     ListUnlinkedAthletesInteractor,
     RegisterBotUserInteractor,
+    RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
 from application.identity.ports import (
@@ -114,6 +115,9 @@ async def test_container_resolves_app_and_request_dependencies(
             assign_user_role_interactor = await request_container.get(
                 AssignUserRoleInteractor
             )
+            remove_user_role_interactor = await request_container.get(
+                RemoveUserRoleInteractor
+            )
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
@@ -151,6 +155,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 assign_user_role_interactor,
                 AssignUserRoleInteractor,
             )
+            assert isinstance(
+                remove_user_role_interactor,
+                RemoveUserRoleInteractor,
+            )
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
@@ -181,6 +189,9 @@ async def test_container_resolves_app_and_request_dependencies(
             assert (
                 assign_user_role_interactor._audit_log is audit_repository
             )
+            assert remove_user_role_interactor._users is user_repository
+            assert remove_user_role_interactor._roles is role_repository
+            assert remove_user_role_interactor._audit_log is audit_repository
 
         token_hasher = await container.get(InviteTokenHasher)
         token_generator = await container.get(InviteTokenGenerator)

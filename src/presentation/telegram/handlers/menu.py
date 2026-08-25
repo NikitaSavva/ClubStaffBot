@@ -24,6 +24,7 @@ from presentation.telegram.presenters import (
 )
 from presentation.telegram.screen import (
     BannerContext,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
@@ -35,7 +36,6 @@ from presentation.telegram.ui_context import (
     set_navigation_context,
 )
 
-MENU_TEXT = "Выберите раздел:"
 USER_NOT_REGISTERED_TEXT = (
     "Сначала зарегистрируйтесь по ссылке-приглашению на ресепшене."
 )
@@ -50,16 +50,17 @@ async def handle_menu(
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     telegram_user = message.from_user
-    await clear_flow_context(state)
     if telegram_user is None:
+        await state.clear()
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
             screen=_unregistered_screen(),
+            mode=RenderMode.NEW,
         )
         return
 
-    await show_home_screen(
+    await recover_home_screen(
         chat_id=message.chat.id,
         telegram_id=telegram_user.id,
         state=state,
@@ -77,6 +78,7 @@ async def show_home_screen(
     renderer: TelegramScreenRenderer,
     editable_message: Message | None = None,
     notice: str | None = None,
+    mode: RenderMode = RenderMode.EDIT,
 ) -> None:
     context = await _load_menu_context(
         telegram_id=telegram_id,
@@ -94,6 +96,7 @@ async def show_home_screen(
             state=state,
             chat_id=chat_id,
             screen=_unregistered_screen(),
+            mode=mode,
             editable_message=editable_message,
         )
         return
@@ -109,6 +112,7 @@ async def show_home_screen(
             state=state,
             chat_id=chat_id,
             screen=_menu_unavailable_screen(),
+            mode=mode,
             editable_message=editable_message,
         )
         return
@@ -123,6 +127,7 @@ async def show_home_screen(
             context=context,
             role=roles[0],
             notice=notice,
+            mode=mode,
         )
         return
 
@@ -144,7 +149,30 @@ async def show_home_screen(
         state=state,
         chat_id=chat_id,
         screen=screen,
+        mode=mode,
         editable_message=editable_message,
+    )
+
+
+async def recover_home_screen(
+    *,
+    chat_id: int,
+    telegram_id: int,
+    state: FSMContext,
+    interactor: GetUserMenuContextInteractor,
+    renderer: TelegramScreenRenderer,
+    notice: str | None = None,
+) -> None:
+    """Rebuild the root UI without trusting persisted Presentation state."""
+    await state.clear()
+    await show_home_screen(
+        chat_id=chat_id,
+        telegram_id=telegram_id,
+        state=state,
+        interactor=interactor,
+        renderer=renderer,
+        notice=notice,
+        mode=RenderMode.NEW,
     )
 
 
@@ -360,6 +388,7 @@ async def _render_role_panel(
     context: MenuContext,
     role: RolePanel,
     notice: str | None,
+    mode: RenderMode = RenderMode.EDIT,
 ) -> None:
     roles = available_role_panels(context)
     root_screen = (
@@ -381,6 +410,7 @@ async def _render_role_panel(
             show_role_selector_back=len(roles) > 1,
             notice=notice,
         ),
+        mode=mode,
         editable_message=editable_message,
     )
 

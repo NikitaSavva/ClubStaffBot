@@ -289,6 +289,7 @@ async def test_successful_registration_assigns_athlete_role_and_commits() -> Non
     assert athlete.user_id == 101
     assert athlete.first_name == "New"
     assert athlete.last_name is None
+    assert athlete.birth_date is None
     assert athlete.phone is None
     assert athlete.is_active
     assert audit_log.records == [
@@ -346,7 +347,7 @@ async def test_unknown_invite_does_not_commit() -> None:
 
 
 async def test_existing_telegram_user_is_controlled_failure() -> None:
-    interactor, users, athletes, roles, _, audit_log, uow = build_interactor(
+    interactor, users, athletes, roles, invites, audit_log, uow = build_interactor(
         user=existing_user()
     )
 
@@ -356,6 +357,7 @@ async def test_existing_telegram_user_is_controlled_failure() -> None:
     assert users.added == []
     assert athletes.added == []
     assert roles.assignments == []
+    assert invites.requested_hashes == []
     assert audit_log.records == []
     assert uow.commit_count == 0
 

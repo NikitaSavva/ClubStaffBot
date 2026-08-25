@@ -23,6 +23,7 @@ from application.identity.ports import (
 )
 from application.identity.role_management import (
     AssignUserRoleInteractor,
+    RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
 
@@ -56,6 +57,21 @@ class ApplicationProvider(Provider):
             audit_log_repository=audit_log_repository,
             unit_of_work=unit_of_work,
             clock=clock,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_remove_user_role_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+    ) -> RemoveUserRoleInteractor:
+        return RemoveUserRoleInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
         )
 
     @provide(scope=Scope.REQUEST)

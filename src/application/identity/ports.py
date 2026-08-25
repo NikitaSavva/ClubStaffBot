@@ -10,6 +10,8 @@ class UserRepository(Protocol):
 
     async def get_by_id(self, user_id: int) -> User | None: ...
 
+    async def get_by_id_for_update(self, user_id: int) -> User | None: ...
+
     async def add(self, user: User) -> int: ...
 
 
@@ -47,6 +49,13 @@ class RoleRepository(Protocol):
         role_id: int,
         assigned_by_user_id: int | None,
         assigned_at: datetime,
+    ) -> bool: ...
+
+    async def remove_from_user(
+        self,
+        *,
+        user_id: int,
+        role_id: int,
     ) -> bool: ...
 
 

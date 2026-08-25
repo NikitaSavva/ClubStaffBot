@@ -8,11 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application.identity import (
     AssignUserRoleCommand,
     AssignUserRoleInteractor,
+    RemoveUserRoleCommand,
+    RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
     SearchBotUsersQuery,
 )
+from application.identity.errors import LastUserRoleRemovalForbiddenError
 from domain.identity import SystemRoleCode
 from infrastructure.database.models import (
+    AthleteModel,
     AuditLogModel,
     RoleModel,
     UserModel,
@@ -157,6 +161,24 @@ def build_assign_interactor(
         ),
         unit_of_work=SqlAlchemyUnitOfWork(session),
         clock=FrozenClock(),
+    )
+
+
+def build_remove_interactor(
+    session: AsyncSession,
+    *,
+    failing_audit: bool = False,
+) -> RemoveUserRoleInteractor:
+    audit_repository = SqlAlchemyAuditLogRepository(session)
+    return RemoveUserRoleInteractor(
+        user_repository=SqlAlchemyUserRepository(session),
+        role_repository=SqlAlchemyRoleRepository(session),
+        audit_log_repository=(
+            AuditThenFailRepository(audit_repository)
+            if failing_audit
+            else audit_repository
+        ),
+        unit_of_work=SqlAlchemyUnitOfWork(session),
     )
 
 
@@ -324,6 +346,147 @@ async def test_assignment_and_audit_roll_back_together(
             )
 
         assert assignment_count == 0
+        assert audit_count == 0
+    finally:
+        await engine.dispose()
+
+
+async def test_role_removal_persists_audit_and_preserves_athlete_link(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url)
+    session_factory = create_session_factory(engine)
+    try:
+        await ensure_system_roles(session_factory)
+        async with session_factory.begin() as session:
+            actor, target = await create_actor_and_target(session)
+            await assign_role(
+                session,
+                user_id=target.id,
+                role_code=SystemRoleCode.TRAINER,
+                assigned_by_user_id=actor.id,
+            )
+            athlete = AthleteModel(
+                user_id=target.id,
+                first_name="Иван",
+                last_name="Иванов",
+                birth_date=None,
+                phone=None,
+                is_active=True,
+            )
+            session.add(athlete)
+            await session.flush()
+            athlete_id = athlete.id
+
+        command = RemoveUserRoleCommand(
+            actor_telegram_id=actor.telegram_id,
+            target_user_id=target.id,
+            role_code=SystemRoleCode.ATHLETE,
+        )
+        async with session_factory() as session:
+            first_result = await build_remove_interactor(session)(command)
+        async with session_factory() as session:
+            repeated_result = await build_remove_interactor(session)(command)
+
+        assert first_result.role_was_removed
+        assert first_result.current_role_codes == (SystemRoleCode.TRAINER,)
+        assert not repeated_result.role_was_removed
+
+        async with session_factory() as session:
+            role_codes = set(
+                await session.scalars(
+                    select(RoleModel.code)
+                    .join(
+                        UserRoleModel,
+                        UserRoleModel.role_id == RoleModel.id,
+                    )
+                    .where(UserRoleModel.user_id == target.id)
+                )
+            )
+            persisted_athlete = await session.get(AthleteModel, athlete_id)
+            audits = (
+                await session.scalars(
+                    select(AuditLogModel).where(
+                        AuditLogModel.action == "ROLE_REMOVED",
+                        AuditLogModel.entity_id == target.id,
+                    )
+                )
+            ).all()
+
+        assert role_codes == {SystemRoleCode.TRAINER.value}
+        assert persisted_athlete is not None
+        assert persisted_athlete.user_id == target.id
+        assert len(audits) == 1
+        assert audits[0].actor_user_id == actor.id
+        assert audits[0].payload == {"role_code": "ATHLETE"}
+        assert audits[0].created_at is not None
+
+        async with session_factory() as session:
+            with pytest.raises(LastUserRoleRemovalForbiddenError):
+                await build_remove_interactor(session)(
+                    RemoveUserRoleCommand(
+                        actor_telegram_id=actor.telegram_id,
+                        target_user_id=target.id,
+                        role_code=SystemRoleCode.TRAINER,
+                    )
+                )
+    finally:
+        await engine.dispose()
+
+
+async def test_role_removal_and_audit_roll_back_together(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url)
+    session_factory = create_session_factory(engine)
+    try:
+        await ensure_system_roles(session_factory)
+        async with session_factory.begin() as session:
+            actor, target = await create_actor_and_target(session)
+            await assign_role(
+                session,
+                user_id=target.id,
+                role_code=SystemRoleCode.TRAINER,
+                assigned_by_user_id=actor.id,
+            )
+
+        async with session_factory() as session:
+            with pytest.raises(
+                RuntimeError,
+                match="audit persistence failed",
+            ):
+                await build_remove_interactor(
+                    session,
+                    failing_audit=True,
+                )(
+                    RemoveUserRoleCommand(
+                        actor_telegram_id=actor.telegram_id,
+                        target_user_id=target.id,
+                        role_code=SystemRoleCode.TRAINER,
+                    )
+                )
+
+        async with session_factory() as session:
+            role_codes = set(
+                await session.scalars(
+                    select(RoleModel.code)
+                    .join(
+                        UserRoleModel,
+                        UserRoleModel.role_id == RoleModel.id,
+                    )
+                    .where(UserRoleModel.user_id == target.id)
+                )
+            )
+            audit_count = await session.scalar(
+                select(func.count())
+                .select_from(AuditLogModel)
+                .where(
+                    AuditLogModel.action == "ROLE_REMOVED",
+                    AuditLogModel.entity_id == target.id,
+                )
+            )
+
+        assert role_codes == {"ATHLETE", "TRAINER"}
         assert audit_count == 0
     finally:
         await engine.dispose()

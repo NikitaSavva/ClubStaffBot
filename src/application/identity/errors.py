@@ -25,6 +25,10 @@ class AdministratorPermissionRequiredError(ApplicationError):
     """The use case requires an active ADMINISTRATOR role."""
 
 
+class LastUserRoleRemovalForbiddenError(ApplicationError):
+    """A User must retain at least one active system role."""
+
+
 class AthleteNotFoundError(ApplicationError):
     """The requested Athlete does not exist."""
 

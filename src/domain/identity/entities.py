@@ -1,10 +1,14 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Self
 from uuid import UUID, uuid4
 
-from domain.identity.errors import AthleteFirstNameRequiredError
+from domain.identity.errors import (
+    AthleteBirthDateRequiredError,
+    AthleteFirstNameRequiredError,
+    AthleteLastNameRequiredError,
+)
 
 
 class SystemRoleCode(StrEnum):
@@ -37,20 +41,33 @@ class Athlete:
     user_id: int | None
     first_name: str
     last_name: str | None
+    birth_date: date | None
     phone: str | None
     is_active: bool
 
     @classmethod
-    def create_manually(cls, *, first_name: str) -> Self:
+    def create_manually(
+        cls,
+        *,
+        first_name: str,
+        last_name: str,
+        birth_date: date | None,
+    ) -> Self:
         normalized_first_name = first_name.strip()
         if not normalized_first_name:
             raise AthleteFirstNameRequiredError
+        normalized_last_name = last_name.strip()
+        if not normalized_last_name:
+            raise AthleteLastNameRequiredError
+        if birth_date is None:
+            raise AthleteBirthDateRequiredError
         return cls(
             id=None,
             athlete_public_id=uuid4(),
             user_id=None,
             first_name=normalized_first_name,
-            last_name=None,
+            last_name=normalized_last_name,
+            birth_date=birth_date,
             phone=None,
             is_active=True,
         )
@@ -69,6 +86,7 @@ class Athlete:
             user_id=user_id,
             first_name=first_name,
             last_name=last_name,
+            birth_date=None,
             phone=None,
             is_active=True,
         )
