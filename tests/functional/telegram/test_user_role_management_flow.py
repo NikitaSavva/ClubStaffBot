@@ -12,7 +12,6 @@ from aiogram.methods import (
     DeleteMessage,
     EditMessageCaption,
     EditMessageMedia,
-    EditMessageReplyMarkup,
     SendMessage,
     SendPhoto,
     TelegramMethod,
@@ -54,6 +53,7 @@ from presentation.telegram.handlers.role_management import (
     USER_ROLE_CONTEXT_TEXT,
     USER_SELECTION_UNAVAILABLE_TEXT,
 )
+from presentation.telegram.middlewares.active_screen import STALE_SCREEN_TEXT
 from presentation.telegram.navigation import (
     BACK_BUTTON_TEXT,
     NavigationAction,
@@ -111,6 +111,7 @@ def callback_update(
     update_id: int,
     sender: User,
     data: str,
+    message_id: int | None = None,
 ) -> Update:
     return Update(
         update_id=update_id,
@@ -120,7 +121,7 @@ def callback_update(
             chat_instance=f"chat-{sender.id}",
             data=data,
             message=Message(
-                message_id=update_id,
+                message_id=(update_id if message_id is None else message_id),
                 date=NOW,
                 chat=Chat(id=sender.id, type=ChatType.PRIVATE),
                 from_user=BOT_USER,
@@ -244,17 +245,26 @@ async def test_invalid_user_query_stays_visible_and_renders_compact_error(
         dispatcher = create_dispatcher(container)
         await dispatcher.feed_update(
             bot,
+            message_update(update_id=1, sender=sender, text="/menu"),
+        )
+        menu_screen = next(
+            method for method in methods if isinstance(method, SendPhoto)
+        )
+        menu_message_id = sent_message_id(methods, menu_screen)
+        await dispatcher.feed_update(
+            bot,
             callback_update(
-                update_id=1,
+                update_id=2,
                 sender=sender,
                 data=MANAGE_USERS_ACTION,
+                message_id=menu_message_id,
             ),
         )
 
         invalid_offset = len(methods)
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=2, sender=sender, text="   "),
+            message_update(update_id=3, sender=sender, text="   "),
         )
         invalid_methods = methods[invalid_offset:]
         assert not any(
@@ -379,6 +389,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=2,
                 sender=admin_sender,
                 data=MANAGE_USERS_ACTION,
+                message_id=menu_message_id,
             ),
         )
         begin_search_methods = sent_methods[begin_search_offset:]
@@ -386,11 +397,6 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             method
             for method in begin_search_methods
             if isinstance(method, AnswerCallbackQuery)
-        )
-        menu_keyboard_cleanup = next(
-            method
-            for method in begin_search_methods
-            if isinstance(method, EditMessageReplyMarkup)
         )
         prompt_screen = next(
             method
@@ -400,9 +406,8 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
         prompt_message_id = sent_message_id(sent_methods, prompt_screen)
         assert begin_search_methods.index(
             begin_search_answer
-        ) < begin_search_methods.index(menu_keyboard_cleanup)
-        assert menu_keyboard_cleanup.message_id == menu_message_id
-        assert menu_keyboard_cleanup.reply_markup is None
+        ) < begin_search_methods.index(prompt_screen)
+        assert menu_screen.reply_markup is not None
         assert prompt_message_id != menu_message_id
         assert prompt_screen.text == ENTER_USER_QUERY_TEXT
         assert prompt_screen.reply_markup is not None
@@ -425,11 +430,6 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             for method in search_result_methods
             if isinstance(method, DeleteMessage)
         )
-        prompt_keyboard_cleanup = next(
-            method
-            for method in search_result_methods
-            if isinstance(method, EditMessageReplyMarkup)
-        )
         result_screen = next(
             method
             for method in search_result_methods
@@ -438,10 +438,9 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
         result_message_id = sent_message_id(sent_methods, result_screen)
         assert query_cleanup.message_id == 3
         assert search_result_methods.index(query_cleanup) < (
-            search_result_methods.index(prompt_keyboard_cleanup)
+            search_result_methods.index(result_screen)
         )
-        assert prompt_keyboard_cleanup.message_id == prompt_message_id
-        assert prompt_keyboard_cleanup.reply_markup is None
+        assert prompt_screen.reply_markup is not None
         assert result_message_id != prompt_message_id
         assert result_screen.caption == SELECT_USER_TEXT
         assert result_screen.photo == "admin-banner-file-id"
@@ -450,12 +449,29 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             search_message
         )
 
+        stale_offset = len(sent_methods)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=40,
+                sender=admin_sender,
+                data=MANAGE_USERS_ACTION,
+                message_id=menu_message_id,
+            ),
+        )
+        stale_methods = sent_methods[stale_offset:]
+        assert len(stale_methods) == 1
+        stale_answer = stale_methods[0]
+        assert isinstance(stale_answer, AnswerCallbackQuery)
+        assert stale_answer.text == STALE_SCREEN_TEXT
+
         await dispatcher.feed_update(
             bot,
             callback_update(
                 update_id=4,
                 sender=admin_sender,
                 data=f"{SELECT_USER_PREFIX}{target.id}",
+                message_id=result_message_id,
             ),
         )
         context_message = last_message_with_keyboard(sent_methods)
@@ -474,6 +490,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=5,
                 sender=admin_sender,
                 data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}",
+                message_id=result_message_id,
             ),
         )
         role_message = last_message_with_keyboard(sent_methods)
@@ -500,6 +517,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=6,
                 sender=admin_sender,
                 data=back_to_profile,
+                message_id=result_message_id,
             ),
         )
         returned_profile = last_message_with_keyboard(sent_methods)
@@ -549,6 +567,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=7,
                 sender=admin_sender,
                 data=back_to_users,
+                message_id=result_message_id,
             ),
         )
         returned_list = last_message_with_keyboard(sent_methods)
@@ -566,6 +585,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=8,
                 sender=admin_sender,
                 data=f"{SELECT_USER_PREFIX}{second_target.id}",
+                message_id=result_message_id,
             ),
         )
         second_profile = last_message_with_keyboard(sent_methods)
@@ -578,6 +598,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                 update_id=9,
                 sender=admin_sender,
                 data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{second_target.id}",
+                message_id=result_message_id,
             ),
         )
         second_role_message = last_message_with_keyboard(sent_methods)
@@ -596,6 +617,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
                     f"{ASSIGN_ROLE_PREFIX}{second_target.id}:"
                     f"{SystemRoleCode.TRAINER.value}"
                 ),
+                message_id=result_message_id,
             ),
         )
         success_message = last_message_with_keyboard(sent_methods)
@@ -745,34 +767,51 @@ async def test_stale_user_callback_returns_controlled_menu_path(
         dispatcher = create_dispatcher(container)
         await dispatcher.feed_update(
             bot,
+            message_update(update_id=1, sender=admin_sender, text="/menu"),
+        )
+        menu_screen = next(
+            method for method in sent_methods if isinstance(method, SendPhoto)
+        )
+        menu_message_id = sent_message_id(sent_methods, menu_screen)
+        await dispatcher.feed_update(
+            bot,
             callback_update(
-                update_id=1,
+                update_id=2,
                 sender=admin_sender,
                 data=MANAGE_USERS_ACTION,
+                message_id=menu_message_id,
             ),
         )
         await dispatcher.feed_update(
             bot,
             message_update(
-                update_id=2,
+                update_id=3,
                 sender=admin_sender,
                 text=target_sender.first_name,
             ),
         )
-        await dispatcher.feed_update(
-            bot,
-            callback_update(
-                update_id=3,
-                sender=admin_sender,
-                data=f"{SELECT_USER_PREFIX}{target.id}",
-            ),
+        result_screen = next(
+            method
+            for method in sent_methods
+            if isinstance(method, SendPhoto) and method is not menu_screen
         )
+        result_message_id = sent_message_id(sent_methods, result_screen)
         await dispatcher.feed_update(
             bot,
             callback_update(
                 update_id=4,
                 sender=admin_sender,
+                data=f"{SELECT_USER_PREFIX}{target.id}",
+                message_id=result_message_id,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=5,
+                sender=admin_sender,
                 data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}",
+                message_id=result_message_id,
             ),
         )
 
@@ -789,13 +828,14 @@ async def test_stale_user_callback_returns_controlled_menu_path(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=5,
+                update_id=6,
                 sender=admin_sender,
                 data=NavigationCallback(
                     action=NavigationAction.BACK,
                     target=NavigationTarget.USER_PROFILE,
                     target_id=target.id,
                 ).pack(),
+                message_id=result_message_id,
             ),
         )
         unavailable_message = last_message_with_keyboard(sent_methods)
@@ -809,9 +849,10 @@ async def test_stale_user_callback_returns_controlled_menu_path(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=6,
+                update_id=7,
                 sender=admin_sender,
                 data=menu_callback,
+                message_id=result_message_id,
             ),
         )
         assert (
@@ -896,26 +937,42 @@ async def test_administrator_removes_role_through_telegram_flow(
         dispatcher = create_dispatcher(container)
         await dispatcher.feed_update(
             bot,
+            message_update(update_id=1, sender=admin_sender, text="/menu"),
+        )
+        menu_screen = next(
+            method for method in methods if isinstance(method, SendPhoto)
+        )
+        menu_message_id = sent_message_id(methods, menu_screen)
+        await dispatcher.feed_update(
+            bot,
             callback_update(
-                update_id=1,
+                update_id=2,
                 sender=admin_sender,
                 data=MANAGE_USERS_ACTION,
+                message_id=menu_message_id,
             ),
         )
         await dispatcher.feed_update(
             bot,
             message_update(
-                update_id=2,
+                update_id=3,
                 sender=admin_sender,
                 text=target_sender.first_name,
             ),
         )
+        result_screen = next(
+            method
+            for method in methods
+            if isinstance(method, SendPhoto) and method is not menu_screen
+        )
+        result_message_id = sent_message_id(methods, result_screen)
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=3,
+                update_id=4,
                 sender=admin_sender,
                 data=f"{SELECT_USER_PREFIX}{target.id}",
+                message_id=result_message_id,
             ),
         )
         profile = last_message_with_keyboard(methods)
@@ -927,9 +984,10 @@ async def test_administrator_removes_role_through_telegram_flow(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=4,
+                update_id=5,
                 sender=admin_sender,
                 data=f"{BEGIN_REMOVE_ROLE_PREFIX}{target.id}",
+                message_id=result_message_id,
             ),
         )
         selection = last_message_with_keyboard(methods)
@@ -954,9 +1012,10 @@ async def test_administrator_removes_role_through_telegram_flow(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=5,
+                update_id=6,
                 sender=admin_sender,
                 data=f"{REMOVE_ROLE_PREFIX}{target.id}:TRAINER",
+                message_id=result_message_id,
             ),
         )
         updated_profile = last_message_with_keyboard(methods)

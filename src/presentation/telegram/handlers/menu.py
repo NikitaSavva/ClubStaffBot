@@ -300,6 +300,7 @@ async def handle_select_role_panel(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 
@@ -323,6 +324,7 @@ async def handle_back_to_role_selector(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 

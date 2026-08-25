@@ -83,7 +83,7 @@ async def test_edit_mode_edits_active_screen() -> None:
     assert await get_active_ui_message(state) == active
 
 
-async def test_new_mode_clears_keyboard_and_sends_new_active_screen() -> None:
+async def test_new_mode_keeps_old_keyboard_and_sends_new_active_screen() -> None:
     renderer, bot = make_renderer()
     state = make_state()
     bot.send_photo.return_value = bot_message(6)
@@ -113,11 +113,7 @@ async def test_new_mode_clears_keyboard_and_sends_new_active_screen() -> None:
 
     assert bot.send_photo.await_count == 1
     assert bot.send_message.await_count == 1
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=previous.message_id,
-        reply_markup=None,
-    )
+    bot.edit_message_reply_markup.assert_not_awaited()
     bot.edit_message_caption.assert_not_awaited()
     assert active.message_id == 7
     assert active.message_id != previous.message_id
@@ -149,11 +145,7 @@ async def test_text_to_media_sends_replacement_screen() -> None:
 
     assert bot.send_message.await_count == 1
     assert bot.send_photo.await_count == 1
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=10,
-        reply_markup=None,
-    )
+    bot.edit_message_reply_markup.assert_not_awaited()
     bot.edit_message_media.assert_not_awaited()
     assert active.message_id == 11
     assert active.kind is UiMessageKind.MEDIA
@@ -221,11 +213,7 @@ async def test_media_to_text_sends_replacement_screen() -> None:
 
     assert bot.send_photo.await_count == 1
     assert bot.send_message.await_count == 1
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=30,
-        reply_markup=None,
-    )
+    bot.edit_message_reply_markup.assert_not_awaited()
     assert active.message_id == 31
     assert active.kind is UiMessageKind.TEXT
 
@@ -258,11 +246,7 @@ async def test_edit_failure_sends_new_active_screen() -> None:
     )
 
     bot.edit_message_text.assert_awaited_once()
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=40,
-        reply_markup=None,
-    )
+    bot.edit_message_reply_markup.assert_not_awaited()
     assert bot.send_message.await_count == 2
     assert active.message_id == 41
     assert await get_active_ui_message(state) == active
@@ -290,11 +274,7 @@ async def test_new_send_failure_keeps_previous_active_context() -> None:
             mode=RenderMode.NEW,
         )
 
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=previous.message_id,
-        reply_markup=None,
-    )
+    bot.edit_message_reply_markup.assert_not_awaited()
     assert await get_active_ui_message(state) == previous
 
 
