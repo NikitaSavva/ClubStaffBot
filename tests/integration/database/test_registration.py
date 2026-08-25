@@ -85,6 +85,7 @@ async def test_system_role_bootstrap_is_idempotent(database_url: str) -> None:
         assert {role.code for role in roles} == {
             code.value for code in SystemRoleCode
         }
+        assert SystemRoleCode.OWNER.value in {role.code for role in roles}
         assert len(roles) == len(SystemRoleCode)
         assert all(role.is_system and role.is_active for role in roles)
     finally:

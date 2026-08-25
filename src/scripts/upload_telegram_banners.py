@@ -90,7 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--chat-id",
         type=int,
-        help="Upload target chat ID. Defaults to TELEGRAM_OWNER_ID.",
+        required=True,
+        help="Telegram chat ID that receives the uploaded banners.",
     )
     return parser
 
@@ -134,7 +135,7 @@ async def upload_banners(
 
 async def run(
     paths: BannerPaths,
-    chat_id: int | None = None,
+    chat_id: int,
 ) -> dict[str, str]:
     # BaseSettings loads the required application configuration from environment.
     settings = Settings()  # type: ignore[call-arg]
@@ -142,7 +143,7 @@ async def run(
     try:
         return await upload_banners(
             bot,
-            settings.telegram_owner_id if chat_id is None else chat_id,
+            chat_id,
             paths,
         )
     finally:

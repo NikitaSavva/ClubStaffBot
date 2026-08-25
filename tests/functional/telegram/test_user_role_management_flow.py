@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
@@ -212,9 +213,14 @@ def sent_message_id(
     )
 
 
-async def test_administrator_assigns_role_through_telegram_flow(
+@pytest.mark.parametrize(
+    "administrative_role",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_administrative_actor_assigns_role_through_telegram_flow(
     integration_settings: Settings,
     monkeypatch: Any,
+    administrative_role: SystemRoleCode,
 ) -> None:
     container = create_container(integration_settings)
     sent_methods: list[TelegramMethod[Any]] = []
@@ -259,7 +265,7 @@ async def test_administrator_assigns_role_through_telegram_flow(
                 telegram_id=admin_telegram_id,
                 username=admin_sender.username or "",
                 first_name=admin_sender.first_name,
-                role_code=SystemRoleCode.ADMINISTRATOR,
+                role_code=administrative_role,
             )
             target = await add_user_with_role(
                 session,
@@ -394,7 +400,12 @@ async def test_administrator_assigns_role_through_telegram_flow(
         assert {
             f"{ASSIGN_ROLE_PREFIX}{target.id}:{code.value}"
             for code in SystemRoleCode
+            if code is not SystemRoleCode.OWNER
         }.issubset(role_callbacks)
+        assert (
+            f"{ASSIGN_ROLE_PREFIX}{target.id}:OWNER"
+            not in role_callbacks
+        )
         back_to_profile = NavigationCallback(
             action=NavigationAction.BACK,
             target=NavigationTarget.USER_PROFILE,
@@ -574,6 +585,15 @@ async def test_administrator_assigns_role_through_telegram_flow(
         assert (
             admin_state_data["ui_context"]["active_message"]["message_id"]
             == result_message_id
+        )
+        expected_active_role = (
+            RolePanel.OWNER.value
+            if administrative_role is SystemRoleCode.OWNER
+            else RolePanel.ADMINISTRATOR.value
+        )
+        assert (
+            admin_state_data["ui_context"]["navigation"]["active_role"]
+            == expected_active_role
         )
         first_answer = next(
             method
@@ -773,11 +793,20 @@ async def test_administrator_removes_role_through_telegram_flow(
                 role_code=SystemRoleCode.ATHLETE,
             )
             trainer_role = await role(session, SystemRoleCode.TRAINER)
+            owner_role = await role(session, SystemRoleCode.OWNER)
             session.add(
                 UserRoleModel(
                     user_id=target.id,
                     role_id=trainer_role.id,
                     assigned_by_user_id=administrator.id,
+                    assigned_at=NOW,
+                )
+            )
+            session.add(
+                UserRoleModel(
+                    user_id=target.id,
+                    role_id=owner_role.id,
+                    assigned_by_user_id=None,
                     assigned_at=NOW,
                 )
             )
@@ -836,6 +865,10 @@ async def test_administrator_removes_role_through_telegram_flow(
             callback is not None and callback.endswith(":ADMINISTRATOR")
             for callback in selection_callbacks
         )
+        assert not any(
+            callback is not None and callback.endswith(":OWNER")
+            for callback in selection_callbacks
+        )
 
         await dispatcher.feed_update(
             bot,
@@ -850,12 +883,13 @@ async def test_administrator_removes_role_through_telegram_flow(
             ROLE_REMOVED_TEXT.format(role="TRAINER")
         )
         assert "ATHLETE" in updated_profile.text
+        assert "OWNER" in updated_profile.text
         assert "TRAINER" not in updated_profile.text.split(
             "Текущие роли:\n", maxsplit=1
         )[-1]
         assert (
             f"{BEGIN_REMOVE_ROLE_PREFIX}{target.id}"
-            not in keyboard_callbacks(updated_profile)
+            in keyboard_callbacks(updated_profile)
         )
         assert (
             f"{BEGIN_ASSIGN_ROLE_PREFIX}{target.id}"
@@ -880,7 +914,7 @@ async def test_administrator_removes_role_through_telegram_flow(
                     AuditLogModel.entity_id == target.id,
                 )
             )
-        assert role_codes == {"ATHLETE"}
+        assert role_codes == {"ATHLETE", "OWNER"}
         assert audit is not None
         assert audit.payload == {"role_code": "TRAINER"}
         assert audit.created_at is not None

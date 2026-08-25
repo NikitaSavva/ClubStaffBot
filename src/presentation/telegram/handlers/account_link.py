@@ -21,6 +21,9 @@ from application.identity.errors import (
     AthleteNotFoundError,
     UserNotFoundError,
 )
+from presentation.telegram.handlers.menu import (
+    set_administrative_navigation_context,
+)
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
@@ -32,7 +35,6 @@ from presentation.telegram.navigation import (
     build_back_button,
     build_menu_button,
 )
-from presentation.telegram.presenters import RolePanel
 from presentation.telegram.presenters.athletes import (
     format_athlete_account_link_label,
 )
@@ -43,17 +45,16 @@ from presentation.telegram.screen import (
     TelegramScreenRenderer,
 )
 from presentation.telegram.ui_context import (
-    NavigationContext,
-    RootScreen,
     set_flow_context,
-    set_navigation_context,
 )
 
 LINK_ACCOUNT_ACTION = "administrator.link_athlete_account"
 SELECT_ATHLETE_PREFIX = "athlete_link.select:"
 SELECT_ATHLETE_TEXT = "Выберите спортсмена для привязки аккаунта."
 NO_UNLINKED_ATHLETES_TEXT = "Спортсменов без Telegram-аккаунта нет."
-LINK_PERMISSION_DENIED_TEXT = "Действие доступно только администратору."
+LINK_PERMISSION_DENIED_TEXT = (
+    "Действие доступно только администратору или владельцу."
+)
 ATHLETE_UNAVAILABLE_TEXT = "Спортсмен уже связан или больше не доступен."
 CALLBACK_UNAVAILABLE_TEXT = "Не удалось обработать выбранное действие."
 INVITE_CAPTION = "Отсканируйте QR новым Telegram-аккаунтом.\n{deep_link}"
@@ -96,7 +97,7 @@ async def handle_list_unlinked_athletes(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await _set_admin_navigation(state)
+        await set_administrative_navigation_context(state)
         await set_flow_context(state, {})
         await renderer.render(
             state=state,
@@ -109,7 +110,7 @@ async def handle_list_unlinked_athletes(
         )
         return
 
-    await _set_admin_navigation(state)
+    await set_administrative_navigation_context(state)
     await set_flow_context(state, {})
     if not athletes:
         screen = _admin_screen(
@@ -163,7 +164,7 @@ async def handle_create_athlete_account_link_invite(
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await _set_admin_navigation(state)
+        await set_administrative_navigation_context(state)
         await set_flow_context(state, {})
         await renderer.render(
             state=state,
@@ -176,7 +177,7 @@ async def handle_create_athlete_account_link_invite(
         )
         return
     except (AthleteAlreadyLinkedError, AthleteNotFoundError):
-        await _set_admin_navigation(state)
+        await set_administrative_navigation_context(state)
         await set_flow_context(state, {})
         await renderer.render(
             state=state,
@@ -196,7 +197,7 @@ async def handle_create_athlete_account_link_invite(
         bot_user.username,
     )
     qr_png = generate_qr_png(deep_link)
-    await _set_admin_navigation(state)
+    await set_administrative_navigation_context(state)
     await set_flow_context(
         state,
         {
@@ -242,22 +243,12 @@ def create_account_link_router() -> Router:
     return router
 
 
-async def _set_admin_navigation(state: FSMContext) -> None:
-    await set_navigation_context(
-        state,
-        NavigationContext(
-            root_screen=RootScreen.ROLE_PANEL,
-            active_role=RolePanel.ADMINISTRATOR.value,
-        ),
-    )
-
-
 async def _render_callback_unavailable(
     message: Message,
     state: FSMContext,
     renderer: TelegramScreenRenderer,
 ) -> None:
-    await _set_admin_navigation(state)
+    await set_administrative_navigation_context(state)
     await set_flow_context(state, {})
     await renderer.render(
         state=state,

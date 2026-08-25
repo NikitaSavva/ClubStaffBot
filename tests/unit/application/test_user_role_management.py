@@ -19,6 +19,7 @@ from application.identity import (
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
     LastUserRoleRemovalForbiddenError,
+    OwnerRoleManagementForbiddenError,
     RequiredSystemRoleMissingError,
     UserNotFoundError,
 )
@@ -28,6 +29,11 @@ NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 ACTOR_TELEGRAM_ID = 123456
 ACTOR_USER_ID = 101
 TARGET_USER_ID = 202
+ASSIGNABLE_ROLE_CODES = (
+    SystemRoleCode.ATHLETE,
+    SystemRoleCode.TRAINER,
+    SystemRoleCode.ADMINISTRATOR,
+)
 
 
 class FrozenClock:
@@ -270,10 +276,28 @@ async def test_administrator_searches_users_and_receives_application_dto() -> No
 
     assert result == SearchBotUsersResult(
         users=(target_summary(),),
-        assignable_role_codes=tuple(SystemRoleCode),
+        assignable_role_codes=ASSIGNABLE_ROLE_CODES,
     )
     assert type(result) is SearchBotUsersResult
     assert all(type(item) is BotUserSummary for item in result.users)
+    assert reader.queries == ["target"]
+
+
+async def test_owner_searches_users_with_administrative_access() -> None:
+    users = FakeUserRepository((actor(),))
+    roles = FakeRoleRepository(
+        active_codes={ACTOR_USER_ID: (SystemRoleCode.OWNER,)}
+    )
+    reader = FakeBotUserReader((target_summary(),))
+
+    result = await SearchBotUsersInteractor(users, roles, reader)(
+        SearchBotUsersQuery(
+            actor_telegram_id=ACTOR_TELEGRAM_ID,
+            query="target",
+        )
+    )
+
+    assert result.assignable_role_codes == ASSIGNABLE_ROLE_CODES
     assert reader.queries == ["target"]
 
 
@@ -393,7 +417,7 @@ async def test_administrator_assigns_additional_role_and_audit_atomically() -> N
     assert uow.exit_exception is None
 
 
-@pytest.mark.parametrize("role_code", tuple(SystemRoleCode))
+@pytest.mark.parametrize("role_code", ASSIGNABLE_ROLE_CODES)
 async def test_administrator_can_assign_each_system_role(
     role_code: SystemRoleCode,
 ) -> None:
@@ -414,6 +438,44 @@ async def test_administrator_can_assign_each_system_role(
     assert result.current_role_codes == (role_code,)
     assert audit.records[0]["payload"] == {"role_code": role_code.value}
     assert uow.commit_count == 1
+
+
+async def test_owner_can_assign_an_ordinary_role() -> None:
+    interactor, _, _, audit, uow = build_assign_interactor(
+        actor_role_codes=(SystemRoleCode.OWNER,)
+    )
+
+    result = await interactor(assign_trainer_command())
+
+    assert result.role_was_assigned
+    assert audit.records[0]["actor_user_id"] == ACTOR_USER_ID
+    assert uow.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    "actor_role_code",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_telegram_role_management_cannot_assign_owner(
+    actor_role_code: SystemRoleCode,
+) -> None:
+    interactor, _, roles, audit, uow = build_assign_interactor(
+        actor_role_codes=(actor_role_code,),
+        target_role_codes=(SystemRoleCode.ATHLETE,),
+    )
+
+    with pytest.raises(OwnerRoleManagementForbiddenError):
+        await interactor(
+            AssignUserRoleCommand(
+                actor_telegram_id=ACTOR_TELEGRAM_ID,
+                target_user_id=TARGET_USER_ID,
+                role_code=SystemRoleCode.OWNER,
+            )
+        )
+
+    assert roles.assignments == []
+    assert audit.records == []
+    assert uow.commit_count == 0
 
 
 @pytest.mark.parametrize(
@@ -589,7 +651,7 @@ def remove_trainer_command() -> RemoveUserRoleCommand:
 
 async def test_administrator_removes_only_selected_role_with_audit() -> None:
     interactor, users, roles, audit, uow = build_remove_interactor(
-        target_role_codes=tuple(SystemRoleCode)
+        target_role_codes=ASSIGNABLE_ROLE_CODES
     )
 
     result = await interactor(remove_trainer_command())
@@ -628,6 +690,47 @@ async def test_administrator_removes_only_selected_role_with_audit() -> None:
     assert uow.enter_count == 1
     assert uow.commit_count == 1
     assert uow.exit_exception is None
+
+
+async def test_owner_can_remove_an_ordinary_role() -> None:
+    interactor, _, _, audit, uow = build_remove_interactor(
+        actor_role_codes=(SystemRoleCode.OWNER,)
+    )
+
+    result = await interactor(remove_trainer_command())
+
+    assert result.role_was_removed
+    assert audit.records[0]["actor_user_id"] == ACTOR_USER_ID
+    assert uow.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    "actor_role_code",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_telegram_role_management_cannot_remove_owner(
+    actor_role_code: SystemRoleCode,
+) -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        actor_role_codes=(actor_role_code,),
+        target_role_codes=(
+            SystemRoleCode.OWNER,
+            SystemRoleCode.ATHLETE,
+        ),
+    )
+
+    with pytest.raises(OwnerRoleManagementForbiddenError):
+        await interactor(
+            RemoveUserRoleCommand(
+                actor_telegram_id=ACTOR_TELEGRAM_ID,
+                target_user_id=TARGET_USER_ID,
+                role_code=SystemRoleCode.OWNER,
+            )
+        )
+
+    assert roles.removals == []
+    assert audit.records == []
+    assert uow.commit_count == 0
 
 
 @pytest.mark.parametrize(

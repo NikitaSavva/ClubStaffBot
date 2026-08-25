@@ -4,6 +4,7 @@ from application.identity.account_link import (
     ListUnlinkedAthletesInteractor,
 )
 from application.identity.commands import (
+    AssignOwnerCommand,
     AssignUserRoleCommand,
     CreateAthleteAccountLinkInviteCommand,
     LinkAthleteAccountCommand,
@@ -11,6 +12,7 @@ from application.identity.commands import (
     RemoveUserRoleCommand,
 )
 from application.identity.dto import (
+    AssignOwnerResult,
     AssignUserRoleResult,
     BotUserSummary,
     CreateAthleteAccountLinkInviteResult,
@@ -26,6 +28,7 @@ from application.identity.interactors import (
     GetUserMenuContextInteractor,
     RegisterBotUserInteractor,
 )
+from application.identity.owner_assignment import AssignOwnerInteractor
 from application.identity.queries import (
     GetUserMenuContextQuery,
     ListUnlinkedAthletesQuery,
@@ -38,6 +41,9 @@ from application.identity.role_management import (
 )
 
 __all__ = [
+    "AssignOwnerCommand",
+    "AssignOwnerInteractor",
+    "AssignOwnerResult",
     "AssignUserRoleCommand",
     "AssignUserRoleInteractor",
     "AssignUserRoleResult",

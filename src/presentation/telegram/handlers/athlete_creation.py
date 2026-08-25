@@ -21,7 +21,10 @@ from domain.identity import (
     AthleteFirstNameRequiredError,
     AthleteLastNameRequiredError,
 )
-from presentation.telegram.handlers.menu import show_active_role_panel
+from presentation.telegram.handlers.menu import (
+    set_administrative_navigation_context,
+    show_active_role_panel,
+)
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
@@ -34,7 +37,6 @@ from presentation.telegram.navigation import (
     build_cancel_button,
     build_menu_button,
 )
-from presentation.telegram.presenters import RolePanel
 from presentation.telegram.screen import (
     BannerContext,
     RenderMode,
@@ -43,12 +45,9 @@ from presentation.telegram.screen import (
 )
 from presentation.telegram.states import CreateAthleteStates
 from presentation.telegram.ui_context import (
-    NavigationContext,
-    RootScreen,
     clear_flow_context,
     get_flow_context,
     set_flow_context,
-    set_navigation_context,
 )
 
 CREATE_ATHLETE_ACTION = "administrator.create_athlete"
@@ -81,7 +80,7 @@ CONFIRM_CREATE_ATHLETE_TEXT = (
 )
 CREATE_ATHLETE_CANCELLED_TEXT = "Создание спортсмена отменено."
 CREATE_ATHLETE_PERMISSION_DENIED_TEXT = (
-    "Действие доступно только администратору."
+    "Действие доступно только администратору или владельцу."
 )
 CREATE_ATHLETE_SUCCESS_TEXT = "Спортсмен {first_name} {last_name} создан."
 
@@ -114,7 +113,7 @@ async def handle_begin_create_athlete(
     if not isinstance(message, Message):
         return
 
-    await _set_admin_navigation(state)
+    await set_administrative_navigation_context(state)
     await set_flow_context(state, {})
     await _show_first_name_step(
         message=message,
@@ -628,16 +627,6 @@ async def _render_prompt(
         ),
         mode=mode,
         editable_message=editable_message,
-    )
-
-
-async def _set_admin_navigation(state: FSMContext) -> None:
-    await set_navigation_context(
-        state,
-        NavigationContext(
-            root_screen=RootScreen.ROLE_PANEL,
-            active_role=RolePanel.ADMINISTRATOR.value,
-        ),
     )
 
 

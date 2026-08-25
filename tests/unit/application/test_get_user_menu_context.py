@@ -76,6 +76,27 @@ def build_interactor(
     ("role_code", "expected_items"),
     [
         (
+            SystemRoleCode.OWNER,
+            (
+                MenuItem(
+                    action_id="owner.home",
+                    title="Меню владельца",
+                ),
+                MenuItem(
+                    action_id="administrator.create_athlete",
+                    title="Добавить спортсмена",
+                ),
+                MenuItem(
+                    action_id="administrator.link_athlete_account",
+                    title="Связать аккаунт",
+                ),
+                MenuItem(
+                    action_id="administrator.manage_users",
+                    title="Пользователи",
+                ),
+            ),
+        ),
+        (
             SystemRoleCode.ADMINISTRATOR,
             (
                 MenuItem(
@@ -150,6 +171,25 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "administrator.manage_users",
         "trainer.home",
         "athlete.home",
+    ]
+
+
+async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
+    interactor, _, _ = build_interactor(
+        role_codes=(
+            SystemRoleCode.OWNER,
+            SystemRoleCode.ADMINISTRATOR,
+        )
+    )
+
+    result = await interactor(GetUserMenuContextQuery(telegram_id=TELEGRAM_ID))
+
+    assert [item.action_id for item in result.items] == [
+        "owner.home",
+        "administrator.create_athlete",
+        "administrator.link_athlete_account",
+        "administrator.manage_users",
+        "administrator.home",
     ]
 
 

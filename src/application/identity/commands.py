@@ -39,3 +39,8 @@ class RemoveUserRoleCommand:
     actor_telegram_id: int
     target_user_id: int
     role_code: SystemRoleCode
+
+
+@dataclass(frozen=True, slots=True)
+class AssignOwnerCommand:
+    telegram_id: int

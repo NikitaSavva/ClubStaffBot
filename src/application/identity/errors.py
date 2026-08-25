@@ -22,7 +22,7 @@ class UserHasNoRolesError(ApplicationError):
 
 
 class AdministratorPermissionRequiredError(ApplicationError):
-    """The use case requires an active ADMINISTRATOR role."""
+    """The use case requires administrative access."""
 
 
 class LastUserRoleRemovalForbiddenError(ApplicationError):
@@ -35,3 +35,11 @@ class AthleteNotFoundError(ApplicationError):
 
 class AthleteAlreadyLinkedError(ApplicationError):
     """The Athlete is already linked to a User."""
+
+
+class OwnerRoleManagementForbiddenError(ApplicationError):
+    """OWNER cannot be assigned or removed through Telegram role management."""
+
+
+class OwnerAlreadyAssignedError(ApplicationError):
+    """OWNER is already assigned to a different User."""

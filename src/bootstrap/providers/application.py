@@ -11,6 +11,7 @@ from application.identity.interactors import (
     GetUserMenuContextInteractor,
     RegisterBotUserInteractor,
 )
+from application.identity.owner_assignment import AssignOwnerInteractor
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
@@ -29,6 +30,23 @@ from application.identity.role_management import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_assign_owner_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+    ) -> AssignOwnerInteractor:
+        return AssignOwnerInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+            clock=clock,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_search_bot_users_interactor(
         self,

@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     redis_db: int = Field(ge=0)
 
     telegram_bot_token: SecretStr = Field(min_length=1)
-    telegram_owner_id: int = Field(gt=0)
     admin_panel_banner_file_id: str | None = None
     trainer_panel_banner_file_id: str | None = None
     athlete_panel_banner_file_id: str | None = None

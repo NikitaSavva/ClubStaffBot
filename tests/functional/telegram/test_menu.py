@@ -129,6 +129,21 @@ async def add_user_with_roles(
     ("role_code", "expected_caption", "expected_banner", "expected_rows"),
     [
         (
+            SystemRoleCode.OWNER,
+            (
+                "Управляйте спортсменами, Telegram-аккаунтами и ролями "
+                "пользователей."
+            ),
+            "admin-banner-file-id",
+            [
+                [("Добавить спортсмена", "administrator.create_athlete")],
+                [
+                    ("Пользователи", "administrator.manage_users"),
+                    ("Связать аккаунт", "administrator.link_athlete_account"),
+                ],
+            ],
+        ),
+        (
             SystemRoleCode.ADMINISTRATOR,
             (
                 "Добавляйте спортсменов, связывайте их с Telegram и "

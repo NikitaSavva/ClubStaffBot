@@ -1,4 +1,5 @@
 from application.common import Clock, UnitOfWork
+from application.identity.authorization import require_administrative_actor
 from application.identity.commands import (
     AssignUserRoleCommand,
     RemoveUserRoleCommand,
@@ -10,8 +11,8 @@ from application.identity.dto import (
     SearchBotUsersResult,
 )
 from application.identity.errors import (
-    AdministratorPermissionRequiredError,
     LastUserRoleRemovalForbiddenError,
+    OwnerRoleManagementForbiddenError,
     RequiredSystemRoleMissingError,
     UserNotFoundError,
 )
@@ -27,22 +28,6 @@ from domain.identity import Role, SystemRoleCode, User
 ROLE_ASSIGNED_ACTION = "ROLE_ASSIGNED"
 ROLE_REMOVED_ACTION = "ROLE_REMOVED"
 USER_ENTITY_TYPE = "USER"
-
-
-async def _require_administrator(
-    *,
-    telegram_id: int,
-    users: UserRepository,
-    roles: RoleRepository,
-) -> User:
-    actor = await users.get_by_telegram_id(telegram_id)
-    if actor is None or actor.id is None:
-        raise UserNotFoundError
-
-    role_codes = await roles.list_active_codes_for_user(actor.id)
-    if SystemRoleCode.ADMINISTRATOR not in role_codes:
-        raise AdministratorPermissionRequiredError
-    return actor
 
 
 def _require_active_system_role(role: Role | None) -> Role:
@@ -66,7 +51,7 @@ class SearchBotUsersInteractor:
         self,
         query: SearchBotUsersQuery,
     ) -> SearchBotUsersResult:
-        await _require_administrator(
+        await require_administrative_actor(
             telegram_id=query.actor_telegram_id,
             users=self._users,
             roles=self._roles,
@@ -75,7 +60,11 @@ class SearchBotUsersInteractor:
         users = await self._reader.search(search_term)
         return SearchBotUsersResult(
             users=users,
-            assignable_role_codes=tuple(SystemRoleCode),
+            assignable_role_codes=tuple(
+                code
+                for code in SystemRoleCode
+                if code is not SystemRoleCode.OWNER
+            ),
         )
 
 
@@ -99,12 +88,15 @@ class AssignUserRoleInteractor:
         command: AssignUserRoleCommand,
     ) -> AssignUserRoleResult:
         async with self._uow:
-            actor = await _require_administrator(
+            actor = await require_administrative_actor(
                 telegram_id=command.actor_telegram_id,
                 users=self._users,
                 roles=self._roles,
             )
             actor_user_id = _persisted_user_id(actor)
+
+            if command.role_code is SystemRoleCode.OWNER:
+                raise OwnerRoleManagementForbiddenError
 
             target = await self._users.get_by_id(command.target_user_id)
             if target is None or target.id is None:
@@ -188,12 +180,15 @@ class RemoveUserRoleInteractor:
         command: RemoveUserRoleCommand,
     ) -> RemoveUserRoleResult:
         async with self._uow:
-            actor = await _require_administrator(
+            actor = await require_administrative_actor(
                 telegram_id=command.actor_telegram_id,
                 users=self._users,
                 roles=self._roles,
             )
             actor_user_id = _persisted_user_id(actor)
+
+            if command.role_code is SystemRoleCode.OWNER:
+                raise OwnerRoleManagementForbiddenError
 
             target = await self._users.get_by_id_for_update(
                 command.target_user_id

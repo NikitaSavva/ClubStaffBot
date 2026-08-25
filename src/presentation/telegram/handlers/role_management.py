@@ -18,11 +18,15 @@ from application.identity import (
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
     LastUserRoleRemovalForbiddenError,
+    OwnerRoleManagementForbiddenError,
     RequiredSystemRoleMissingError,
     UserNotFoundError,
 )
 from domain.identity import SystemRoleCode
-from presentation.telegram.handlers.menu import show_active_role_panel
+from presentation.telegram.handlers.menu import (
+    set_administrative_navigation_context,
+    show_active_role_panel,
+)
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
@@ -35,7 +39,6 @@ from presentation.telegram.navigation import (
     build_cancel_button,
     build_menu_button,
 )
-from presentation.telegram.presenters import RolePanel
 from presentation.telegram.screen import (
     BannerContext,
     RenderMode,
@@ -44,12 +47,9 @@ from presentation.telegram.screen import (
 )
 from presentation.telegram.states import RoleManagementStates
 from presentation.telegram.ui_context import (
-    NavigationContext,
-    RootScreen,
     clear_flow_context,
     get_flow_context,
     set_flow_context,
-    set_navigation_context,
     update_flow_context,
 )
 
@@ -68,7 +68,7 @@ NO_USERS_FOUND_TEXT = "Пользователи не найдены. Попро�
 SELECT_USER_TEXT = "Выберите зарегистрированного пользователя."
 ROLE_MANAGEMENT_CANCELLED_TEXT = "Управление ролями отменено."
 ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT = (
-    "Действие доступно только администратору."
+    "Действие доступно только администратору или владельцу."
 )
 USER_SELECTION_UNAVAILABLE_TEXT = (
     "Пользователь больше не доступен. Вернитесь в актуальную панель."
@@ -87,6 +87,10 @@ ROLE_ALREADY_ASSIGNED_TEXT = (
 ROLE_REMOVED_TEXT = "Роль {role} снята."
 ROLE_ALREADY_ABSENT_TEXT = "Роль {role} уже отсутствует."
 LAST_ROLE_REMOVAL_FORBIDDEN_TEXT = "Нельзя снять последнюю роль пользователя."
+OWNER_ROLE_MANAGEMENT_FORBIDDEN_TEXT = (
+    "Роль OWNER назначается только системным оператором и недоступна для "
+    "управления через Telegram."
+)
 
 
 def build_user_selection_keyboard(
@@ -117,7 +121,9 @@ def build_user_profile_keyboard(
             callback_data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target_user_id}",
         )
     ]
-    if len(role_codes) > 1:
+    if len(role_codes) > 1 and any(
+        code is not SystemRoleCode.OWNER for code in role_codes
+    ):
         action_buttons.append(
             build_callback_button(
                 text="Снять роль",
@@ -143,6 +149,7 @@ def build_role_selection_keyboard(
             ),
         )
         for role_code in role_codes
+        if role_code is not SystemRoleCode.OWNER
     )
     role_rows = tuple(
         role_buttons[index : index + 2]
@@ -172,6 +179,7 @@ def build_role_removal_keyboard(
             ),
         )
         for role_code in role_codes
+        if role_code is not SystemRoleCode.OWNER
     )
     role_rows = tuple(
         role_buttons[index : index + 2]
@@ -200,7 +208,7 @@ async def handle_begin_user_search(
     if not isinstance(message, Message):
         return
 
-    await _set_admin_navigation(state)
+    await set_administrative_navigation_context(state)
     await set_flow_context(state, {})
     await state.set_state(RoleManagementStates.waiting_for_query)
     await _render_admin_screen(
@@ -586,6 +594,17 @@ async def handle_assign_user_role(
             editable_message=message,
         )
         return
+    except OwnerRoleManagementForbiddenError:
+        await clear_flow_context(state)
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=OWNER_ROLE_MANAGEMENT_FORBIDDEN_TEXT,
+            reply_markup=build_inline_keyboard((build_menu_button(),)),
+            editable_message=message,
+        )
+        return
 
     response_template = (
         ROLE_ASSIGNED_TEXT
@@ -652,6 +671,17 @@ async def handle_remove_user_role(
             state=state,
             renderer=renderer,
             text=ROLE_CONFIGURATION_UNAVAILABLE_TEXT,
+            reply_markup=build_inline_keyboard((build_menu_button(),)),
+            editable_message=message,
+        )
+        return
+    except OwnerRoleManagementForbiddenError:
+        await clear_flow_context(state)
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=OWNER_ROLE_MANAGEMENT_FORBIDDEN_TEXT,
             reply_markup=build_inline_keyboard((build_menu_button(),)),
             editable_message=message,
         )
@@ -962,16 +992,6 @@ async def _render_admin_screen(
         ),
         mode=mode,
         editable_message=editable_message,
-    )
-
-
-async def _set_admin_navigation(state: FSMContext) -> None:
-    await set_navigation_context(
-        state,
-        NavigationContext(
-            root_screen=RootScreen.ROLE_PANEL,
-            active_role=RolePanel.ADMINISTRATOR.value,
-        ),
     )
 
 

@@ -1,4 +1,5 @@
 from application.common import Clock, UnitOfWork
+from application.identity.authorization import require_administrative_actor
 from application.identity.commands import (
     CreateAthleteAccountLinkInviteCommand,
     LinkAthleteAccountCommand,
@@ -9,13 +10,11 @@ from application.identity.dto import (
     UnlinkedAthlete,
 )
 from application.identity.errors import (
-    AdministratorPermissionRequiredError,
     AthleteAlreadyLinkedError,
     AthleteNotFoundError,
     InvalidBotInviteError,
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
-    UserNotFoundError,
 )
 from application.identity.ports import (
     AthleteRepository,
@@ -43,22 +42,6 @@ ATHLETE_ENTITY_TYPE = "ATHLETE"
 BOT_INVITE_ENTITY_TYPE = "BOT_INVITE"
 
 
-async def _require_administrator(
-    *,
-    telegram_id: int,
-    users: UserRepository,
-    roles: RoleRepository,
-) -> User:
-    actor = await users.get_by_telegram_id(telegram_id)
-    if actor is None or actor.id is None:
-        raise UserNotFoundError
-
-    role_codes = await roles.list_active_codes_for_user(actor.id)
-    if SystemRoleCode.ADMINISTRATOR not in role_codes:
-        raise AdministratorPermissionRequiredError
-    return actor
-
-
 def _require_active_athlete_role(role: Role | None) -> Role:
     if role is None or not role.is_system or not role.is_active:
         raise RequiredSystemRoleMissingError
@@ -80,7 +63,7 @@ class ListUnlinkedAthletesInteractor:
         self,
         query: ListUnlinkedAthletesQuery,
     ) -> tuple[UnlinkedAthlete, ...]:
-        await _require_administrator(
+        await require_administrative_actor(
             telegram_id=query.actor_telegram_id,
             users=self._users,
             roles=self._roles,
@@ -123,7 +106,7 @@ class CreateAthleteAccountLinkInviteInteractor:
         command: CreateAthleteAccountLinkInviteCommand,
     ) -> CreateAthleteAccountLinkInviteResult:
         async with self._uow:
-            actor = await _require_administrator(
+            actor = await require_administrative_actor(
                 telegram_id=command.actor_telegram_id,
                 users=self._users,
                 roles=self._roles,
