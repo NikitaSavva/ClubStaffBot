@@ -27,6 +27,7 @@ from presentation.telegram.handlers.menu import (
     set_administrative_navigation_context,
     show_active_role_panel,
 )
+from presentation.telegram.input_cleanup import cleanup_accepted_user_input
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
@@ -61,10 +62,19 @@ BEGIN_REMOVE_ROLE_PREFIX = "user_roles.remove:start:"
 REMOVE_ROLE_PREFIX = "user_roles.remove_role:"
 
 ENTER_USER_QUERY_TEXT = (
-    "Введите имя, фамилию или Telegram username пользователя."
+    "Поиск пользователей\n\n"
+    "Введите имя, фамилию или Telegram username."
 )
-INVALID_USER_QUERY_TEXT = "Введите непустое имя или Telegram username."
-NO_USERS_FOUND_TEXT = "Пользователи не найдены. Попробуйте другой запрос."
+INVALID_USER_QUERY_TEXT = (
+    "Поиск пользователей\n\n"
+    "Запрос не может быть пустым.\n"
+    "Введите имя, фамилию или Telegram username."
+)
+NO_USERS_FOUND_TEXT = (
+    "Поиск пользователей\n\n"
+    "Пользователи не найдены.\n"
+    "Введите другой запрос."
+)
 SELECT_USER_TEXT = "Выберите зарегистрированного пользователя."
 ROLE_MANAGEMENT_CANCELLED_TEXT = "Управление ролями отменено."
 ROLE_MANAGEMENT_PERMISSION_DENIED_TEXT = (
@@ -211,7 +221,7 @@ async def handle_begin_user_search(
     await set_administrative_navigation_context(state)
     await set_flow_context(state, {})
     await state.set_state(RoleManagementStates.waiting_for_query)
-    await _render_admin_screen(
+    await _render_compact_screen(
         message=message,
         state=state,
         renderer=renderer,
@@ -272,7 +282,7 @@ async def handle_search_bot_users(
     telegram_user = message.from_user
     query = message.text.strip() if message.text is not None else ""
     if telegram_user is None or not query:
-        await _render_admin_screen(
+        await _render_compact_screen(
             message=message,
             state=state,
             renderer=renderer,
@@ -299,9 +309,10 @@ async def handle_search_bot_users(
         return
 
     await set_flow_context(state, {"search_query": query})
+    await cleanup_accepted_user_input(message)
     if not result.users:
         await state.set_state(RoleManagementStates.waiting_for_query)
-        await _render_admin_screen(
+        await _render_compact_screen(
             message=message,
             state=state,
             renderer=renderer,
@@ -382,7 +393,7 @@ async def handle_back_to_users_list(
     await set_flow_context(state, {"search_query": query})
     if not result.users:
         await state.set_state(RoleManagementStates.waiting_for_query)
-        await _render_admin_screen(
+        await _render_compact_screen(
             message=message,
             state=state,
             renderer=renderer,
@@ -804,12 +815,13 @@ async def _cancel_role_management(
 ) -> None:
     await clear_flow_context(state)
     if telegram_id is None:
-        await _render_admin_screen(
+        await _render_compact_screen(
             message=message,
             state=state,
             renderer=renderer,
             text=ROLE_MANAGEMENT_CANCELLED_TEXT,
             reply_markup=None,
+            mode=RenderMode.NEW,
             editable_message=editable_message,
         )
         return
@@ -821,6 +833,7 @@ async def _cancel_role_management(
         renderer=renderer,
         editable_message=editable_message,
         notice=ROLE_MANAGEMENT_CANCELLED_TEXT,
+        mode=RenderMode.NEW,
     )
 
 
@@ -990,6 +1003,25 @@ async def _render_admin_screen(
             reply_markup=reply_markup,
             banner=BannerContext.ADMIN_PANEL,
         ),
+        mode=mode,
+        editable_message=editable_message,
+    )
+
+
+async def _render_compact_screen(
+    *,
+    message: Message,
+    state: FSMContext,
+    renderer: TelegramScreenRenderer,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+    mode: RenderMode = RenderMode.EDIT,
+    editable_message: Message | None = None,
+) -> None:
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=TelegramScreen(text=text, reply_markup=reply_markup),
         mode=mode,
         editable_message=editable_message,
     )

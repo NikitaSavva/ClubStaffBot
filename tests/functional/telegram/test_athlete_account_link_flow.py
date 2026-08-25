@@ -9,6 +9,7 @@ from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageCaption,
     EditMessageMedia,
+    EditMessageReplyMarkup,
     SendPhoto,
     TelegramMethod,
 )
@@ -278,6 +279,7 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
         )
         assert back_button.text == BACK_BUTTON_TEXT
 
+        return_offset = len(sent_methods)
         await dispatcher.feed_update(
             bot,
             callback_update(
@@ -286,15 +288,34 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
                 data=back_to_menu,
             ),
         )
+        return_methods = sent_methods[return_offset:]
+        list_cleanup = next(
+            method
+            for method in return_methods
+            if isinstance(method, EditMessageReplyMarkup)
+        )
         returned_menu = next(
             method
-            for method in reversed(sent_methods)
-            if isinstance(method, EditMessageCaption)
+            for method in return_methods
+            if isinstance(method, SendPhoto)
         )
+        assert list_cleanup.message_id == athlete_list_method.message_id
+        assert list_cleanup.reply_markup is None
         assert returned_menu.caption == (
             "Добавляйте спортсменов, связывайте их с Telegram и управляйте "
             "ролями пользователей."
         )
+        original_menu_message_id = next(
+            index
+            for index, method in enumerate(sent_methods, start=1)
+            if method is menu_method
+        )
+        returned_menu_message_id = next(
+            index
+            for index, method in enumerate(sent_methods, start=1)
+            if method is returned_menu
+        )
+        assert returned_menu_message_id != original_menu_message_id
         async with session_factory() as session:
             invite_count_before_selection = await session.scalar(
                 select(func.count()).select_from(BotInviteModel)
@@ -326,7 +347,7 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
         assert isinstance(photo_method.media.media, BufferedInputFile)
         assert photo_method.media.media.data.startswith(b"\x89PNG")
         assert photo_method.media.caption is not None
-        assert photo_method.message_id == 1
+        assert photo_method.message_id == returned_menu_message_id
         deep_link = photo_method.media.caption.splitlines()[-1]
         parsed_link = urlparse(deep_link)
         raw_token = parse_qs(parsed_link.query)["start"][0]
@@ -408,7 +429,7 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
             if isinstance(method, SendPhoto)
             and method.chat_id == admin_telegram_id
         ]
-        assert len(admin_sends) == 1
+        assert len(admin_sends) == 2
         assert any(
             isinstance(method, AnswerCallbackQuery) for method in sent_methods
         )

@@ -107,15 +107,23 @@ class TelegramScreenRenderer:
             active = self._active_from_message(editable_message)
 
         if mode is RenderMode.NEW:
-            if active is not None:
-                await self._clear_keyboard(active)
-            return await self._send(state, chat_id, resolved)
+            return await self._send_replacement(
+                state=state,
+                chat_id=chat_id,
+                active=active,
+                screen=resolved,
+            )
 
         if active is None:
             return await self._send(state, chat_id, resolved)
 
         if active.kind is not resolved.kind:
-            return await self._send(state, chat_id, resolved)
+            return await self._send_replacement(
+                state=state,
+                chat_id=chat_id,
+                active=active,
+                screen=resolved,
+            )
 
         try:
             await self._edit(active, resolved)
@@ -261,6 +269,18 @@ class TelegramScreenRenderer:
         except TelegramAPIError as error:
             self._log_keyboard_clear_failure(active, error)
 
+    async def _send_replacement(
+        self,
+        *,
+        state: FSMContext,
+        chat_id: int,
+        active: ActiveUiMessage | None,
+        screen: _ResolvedScreen,
+    ) -> ActiveUiMessage:
+        if active is not None:
+            await self._clear_keyboard(active)
+        return await self._send(state, chat_id, screen)
+
     @staticmethod
     def _log_keyboard_clear_failure(
         active: ActiveUiMessage,
@@ -288,7 +308,12 @@ class TelegramScreenRenderer:
             message_id=active.message_id,
             error_type=type(error).__name__,
         )
-        return await self._send(state, chat_id, screen)
+        return await self._send_replacement(
+            state=state,
+            chat_id=chat_id,
+            active=active,
+            screen=screen,
+        )
 
     @staticmethod
     def _updated_active(

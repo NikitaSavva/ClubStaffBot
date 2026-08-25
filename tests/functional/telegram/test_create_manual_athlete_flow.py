@@ -5,10 +5,15 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
+    DeleteMessage,
     EditMessageCaption,
+    EditMessageReplyMarkup,
+    EditMessageText,
+    SendMessage,
     SendPhoto,
     TelegramMethod,
 )
@@ -153,6 +158,25 @@ def last_sent_photo(methods: list[TelegramMethod[Any]]) -> SendPhoto:
     )
 
 
+def last_sent_message(methods: list[TelegramMethod[Any]]) -> SendMessage:
+    return next(
+        method
+        for method in reversed(methods)
+        if isinstance(method, SendMessage)
+    )
+
+
+def sent_message_id(
+    methods: list[TelegramMethod[Any]],
+    target: TelegramMethod[Any],
+) -> int:
+    return next(
+        index
+        for index, method in enumerate(methods, start=1)
+        if method is target
+    )
+
+
 async def test_administrator_completes_manual_athlete_form_and_confirms(
     integration_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
@@ -188,38 +212,103 @@ async def test_administrator_completes_manual_athlete_form_and_confirms(
 
         await dispatcher.feed_update(
             bot,
-            callback_update(update_id=1, sender=sender),
+            message_update(update_id=1, sender=sender, text="/menu"),
         )
-        assert last_sent_photo(methods).caption == ENTER_FIRST_NAME_TEXT
+        original_home = last_sent_photo(methods)
+        original_home_message_id = sent_message_id(methods, original_home)
 
+        begin_offset = len(methods)
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=2, sender=sender, text="   "),
+            callback_update(update_id=2, sender=sender),
         )
-        assert last_sent_photo(methods).caption == INVALID_FIRST_NAME_TEXT
+        begin_methods = methods[begin_offset:]
+        begin_answer = next(
+            item for item in begin_methods if isinstance(item, AnswerCallbackQuery)
+        )
+        home_cleanup = next(
+            item
+            for item in begin_methods
+            if isinstance(item, EditMessageReplyMarkup)
+        )
+        first_name_prompt = next(
+            item for item in begin_methods if isinstance(item, SendMessage)
+        )
+        first_name_prompt_id = sent_message_id(methods, first_name_prompt)
+        assert begin_methods.index(begin_answer) < begin_methods.index(home_cleanup)
+        assert begin_methods.index(home_cleanup) < begin_methods.index(
+            first_name_prompt
+        )
+        assert home_cleanup.message_id == original_home_message_id
+        assert home_cleanup.reply_markup is None
+        assert first_name_prompt.text == ENTER_FIRST_NAME_TEXT
+        assert first_name_prompt_id != original_home_message_id
+        assert not any(
+            isinstance(item, (EditMessageCaption, EditMessageText))
+            for item in begin_methods
+        )
 
+        invalid_first_offset = len(methods)
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=3, sender=sender, text=first_name),
+            message_update(update_id=3, sender=sender, text="   "),
         )
-        assert last_sent_photo(methods).caption == ENTER_LAST_NAME_TEXT
+        invalid_first_methods = methods[invalid_first_offset:]
+        assert not any(
+            isinstance(item, DeleteMessage) for item in invalid_first_methods
+        )
+        invalid_first_screen = last_sent_message(methods)
+        assert invalid_first_screen.text == INVALID_FIRST_NAME_TEXT
 
+        first_name_offset = len(methods)
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=4, sender=sender, text="   "),
+            message_update(update_id=4, sender=sender, text=first_name),
         )
-        assert last_sent_photo(methods).caption == INVALID_LAST_NAME_TEXT
+        first_name_methods = methods[first_name_offset:]
+        first_name_delete = next(
+            item for item in first_name_methods if isinstance(item, DeleteMessage)
+        )
+        assert first_name_delete.message_id == 4
+        surname_prompt = last_sent_message(methods)
+        assert surname_prompt.text == ENTER_LAST_NAME_TEXT.format(
+            first_name=first_name
+        )
 
+        invalid_last_name_offset = len(methods)
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=5, sender=sender, text=last_name),
+            message_update(update_id=5, sender=sender, text="   "),
         )
-        assert last_sent_photo(methods).caption == ENTER_BIRTH_DATE_TEXT
+        invalid_last_name_methods = methods[invalid_last_name_offset:]
+        assert not any(
+            isinstance(item, DeleteMessage)
+            for item in invalid_last_name_methods
+        )
+        assert last_sent_message(methods).text == INVALID_LAST_NAME_TEXT.format(
+            first_name=first_name
+        )
+
+        last_name_offset = len(methods)
+        await dispatcher.feed_update(
+            bot,
+            message_update(update_id=6, sender=sender, text=last_name),
+        )
+        last_name_methods = methods[last_name_offset:]
+        last_name_delete = next(
+            item for item in last_name_methods if isinstance(item, DeleteMessage)
+        )
+        assert last_name_delete.message_id == 6
+        assert last_sent_message(methods).text == ENTER_BIRTH_DATE_TEXT.format(
+            first_name=first_name,
+            last_name=last_name,
+        )
 
         for update_id, invalid_date in enumerate(
             ("1993-08-25", "25/08/1993", "31.02.2000", "abc"),
-            start=6,
+            start=7,
         ):
+            invalid_date_offset = len(methods)
             await dispatcher.feed_update(
                 bot,
                 message_update(
@@ -228,7 +317,16 @@ async def test_administrator_completes_manual_athlete_form_and_confirms(
                     text=invalid_date,
                 ),
             )
-            assert last_sent_photo(methods).caption == INVALID_BIRTH_DATE_TEXT
+            invalid_date_methods = methods[invalid_date_offset:]
+            assert not any(
+                isinstance(item, DeleteMessage) for item in invalid_date_methods
+            )
+            assert last_sent_message(
+                methods
+            ).text == INVALID_BIRTH_DATE_TEXT.format(
+                first_name=first_name,
+                last_name=last_name,
+            )
 
         storage_key = StorageKey(
             bot_id=bot.id,
@@ -250,13 +348,14 @@ async def test_administrator_completes_manual_athlete_form_and_confirms(
         await dispatcher.feed_update(
             bot,
             message_update(
-                update_id=10,
+                update_id=11,
                 sender=sender,
                 text="25.08.1993",
             ),
         )
-        confirmation = last_sent_photo(methods)
-        assert confirmation.caption == CONFIRM_CREATE_ATHLETE_TEXT.format(
+        confirmation = last_sent_message(methods)
+        confirmation_message_id = sent_message_id(methods, confirmation)
+        assert confirmation.text == CONFIRM_CREATE_ATHLETE_TEXT.format(
             first_name=first_name,
             last_name=last_name,
             birth_date="25.08.1993",
@@ -276,7 +375,7 @@ async def test_administrator_completes_manual_athlete_form_and_confirms(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=11,
+                update_id=12,
                 sender=sender,
                 data=CONFIRM_CREATE_ATHLETE_ACTION,
             ),
@@ -287,19 +386,83 @@ async def test_administrator_completes_manual_athlete_form_and_confirms(
             for item in confirm_methods
             if isinstance(item, AnswerCallbackQuery)
         )
-        success = next(
+        confirmation_cleanup = next(
             item
             for item in confirm_methods
-            if isinstance(item, EditMessageCaption)
+            if isinstance(item, EditMessageReplyMarkup)
         )
-        assert confirm_methods.index(answer) < confirm_methods.index(success)
+        success = next(
+            item for item in confirm_methods if isinstance(item, SendPhoto)
+        )
+        success_message_id = sent_message_id(methods, success)
+        assert confirm_methods.index(answer) < confirm_methods.index(
+            confirmation_cleanup
+        )
+        assert confirm_methods.index(confirmation_cleanup) < confirm_methods.index(
+            success
+        )
+        assert confirmation_cleanup.message_id == confirmation_message_id
+        assert confirmation_cleanup.reply_markup is None
         assert success.caption == CREATE_ATHLETE_SUCCESS_TEXT.format(
             first_name=first_name,
             last_name=last_name,
+            birth_date="25.08.1993",
         )
+        assert success.photo == "admin-banner-file-id"
         assert await dispatcher.storage.get_state(storage_key) is None
         assert "flow_context" not in await dispatcher.storage.get_data(
             storage_key
+        )
+
+        panel_offset = len(methods)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=13,
+                sender=sender,
+                data=NavigationCallback(
+                    action=NavigationAction.BACK,
+                    target=NavigationTarget.ROLE_PANEL,
+                ).pack(),
+            ),
+        )
+        panel_methods = methods[panel_offset:]
+        panel_answer = next(
+            item for item in panel_methods if isinstance(item, AnswerCallbackQuery)
+        )
+        success_cleanup = next(
+            item
+            for item in panel_methods
+            if isinstance(item, EditMessageReplyMarkup)
+        )
+        new_home = next(
+            item for item in panel_methods if isinstance(item, SendPhoto)
+        )
+        new_home_message_id = sent_message_id(methods, new_home)
+        assert panel_methods.index(panel_answer) < panel_methods.index(success_cleanup)
+        assert panel_methods.index(success_cleanup) < panel_methods.index(new_home)
+        assert success_cleanup.message_id == success_message_id
+        assert success_cleanup.reply_markup is None
+        assert new_home_message_id != original_home_message_id
+
+        interactive_message_ids = {
+            index
+            for index, method in enumerate(methods, start=1)
+            if isinstance(method, (SendMessage, SendPhoto))
+            and method.reply_markup is not None
+        }
+        deactivated_message_ids = {
+            method.message_id
+            for method in methods
+            if isinstance(method, EditMessageReplyMarkup)
+            and method.reply_markup is None
+        }
+        assert interactive_message_ids - {new_home_message_id} <= (
+            deactivated_message_ids
+        )
+        active_data = await dispatcher.storage.get_data(storage_key)
+        assert active_data["ui_context"]["active_message"]["message_id"] == (
+            new_home_message_id
         )
 
         async with session_factory() as session:
@@ -362,16 +525,23 @@ async def test_back_moves_through_manual_athlete_steps_without_write(
             bot,
             message_update(update_id=4, sender=sender, text="25.08.1993"),
         )
+        active_form_message_id = sent_message_id(
+            methods,
+            last_sent_message(methods),
+        )
 
         back_steps = (
             (
                 NavigationTarget.CREATE_ATHLETE_BIRTH_DATE,
-                ENTER_BIRTH_DATE_TEXT,
+                ENTER_BIRTH_DATE_TEXT.format(
+                    first_name="Иван",
+                    last_name="Иванов",
+                ),
                 CreateAthleteStates.waiting_for_birth_date.state,
             ),
             (
                 NavigationTarget.CREATE_ATHLETE_LAST_NAME,
-                ENTER_LAST_NAME_TEXT,
+                ENTER_LAST_NAME_TEXT.format(first_name="Иван"),
                 CreateAthleteStates.waiting_for_last_name.state,
             ),
             (
@@ -405,9 +575,10 @@ async def test_back_moves_through_manual_athlete_steps_without_write(
             edit = next(
                 item
                 for item in step_methods
-                if isinstance(item, EditMessageCaption)
+                if isinstance(item, EditMessageText)
             )
-            assert edit.caption == expected_text
+            assert edit.message_id == active_form_message_id
+            assert edit.text == expected_text
             assert await dispatcher.storage.get_state(storage_key) == expected_state
 
         assert (await dispatcher.storage.get_data(storage_key))[
@@ -450,16 +621,27 @@ async def test_cancelled_manual_athlete_form_creates_no_business_state(
         dispatcher = create_dispatcher(container)
         await dispatcher.feed_update(
             bot,
-            callback_update(update_id=1, sender=sender),
+            message_update(update_id=1, sender=sender, text="/menu"),
+        )
+        original_home = last_sent_photo(methods)
+        original_home_message_id = sent_message_id(methods, original_home)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(update_id=2, sender=sender),
         )
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=2, sender=sender, text=first_name),
+            message_update(update_id=3, sender=sender, text=first_name),
         )
+        active_form_message_id = sent_message_id(
+            methods,
+            last_sent_message(methods),
+        )
+        cancel_offset = len(methods)
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=3,
+                update_id=4,
                 sender=sender,
                 data=NavigationCallback(
                     action=NavigationAction.CANCEL,
@@ -468,11 +650,29 @@ async def test_cancelled_manual_athlete_form_creates_no_business_state(
             ),
         )
 
-        assert any(
-            isinstance(item, EditMessageCaption)
-            and item.caption is not None
-            and CREATE_ATHLETE_CANCELLED_TEXT in item.caption
-            for item in methods
+        cancel_methods = methods[cancel_offset:]
+        cancel_answer = next(
+            item for item in cancel_methods if isinstance(item, AnswerCallbackQuery)
+        )
+        form_cleanup = next(
+            item
+            for item in cancel_methods
+            if isinstance(item, EditMessageReplyMarkup)
+        )
+        new_home = next(
+            item for item in cancel_methods if isinstance(item, SendPhoto)
+        )
+        assert cancel_methods.index(cancel_answer) < cancel_methods.index(
+            form_cleanup
+        )
+        assert cancel_methods.index(form_cleanup) < cancel_methods.index(new_home)
+        assert form_cleanup.message_id == active_form_message_id
+        assert form_cleanup.reply_markup is None
+        assert CREATE_ATHLETE_CANCELLED_TEXT in (new_home.caption or "")
+        assert sent_message_id(methods, new_home) != original_home_message_id
+        assert not any(
+            isinstance(item, (EditMessageCaption, EditMessageText))
+            for item in cancel_methods
         )
         storage_key = StorageKey(
             bot_id=bot.id,
@@ -500,6 +700,60 @@ async def test_cancelled_manual_athlete_form_creates_no_business_state(
             )
         assert athlete_count == 0
         assert audit_count == 0
+    finally:
+        await container.close()
+
+
+async def test_valid_input_delete_failure_does_not_interrupt_form(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        if isinstance(method, DeleteMessage):
+            raise TelegramBadRequest(
+                method=method,
+                message="message to delete not found",
+            )
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    sender = telegram_user(18_500_000 + uuid4().int % 1_000_000_000)
+    try:
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(update_id=1, sender=sender),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(update_id=2, sender=sender, text="Иван"),
+        )
+
+        assert any(isinstance(item, DeleteMessage) for item in methods)
+        assert last_sent_message(methods).text == ENTER_LAST_NAME_TEXT.format(
+            first_name="Иван"
+        )
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=sender.id,
+            user_id=sender.id,
+        )
+        assert await dispatcher.storage.get_state(storage_key) == (
+            CreateAthleteStates.waiting_for_last_name.state
+        )
+        assert (await dispatcher.storage.get_data(storage_key))[
+            "flow_context"
+        ] == {"first_name": "Иван"}
     finally:
         await container.close()
 
@@ -554,7 +808,7 @@ async def test_non_administrator_cannot_confirm_manual_athlete(
             await dispatcher.feed_update(bot, update)
 
         assert any(
-            isinstance(item, EditMessageCaption)
+            isinstance(item, SendPhoto)
             and item.caption == CREATE_ATHLETE_PERMISSION_DENIED_TEXT
             for item in methods
         )

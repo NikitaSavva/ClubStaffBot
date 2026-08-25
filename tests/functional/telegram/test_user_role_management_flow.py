@@ -9,9 +9,11 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
+    DeleteMessage,
     EditMessageCaption,
     EditMessageMedia,
     EditMessageReplyMarkup,
+    SendMessage,
     SendPhoto,
     TelegramMethod,
 )
@@ -42,6 +44,7 @@ from presentation.telegram.handlers.role_management import (
     BEGIN_ASSIGN_ROLE_PREFIX,
     BEGIN_REMOVE_ROLE_PREFIX,
     ENTER_USER_QUERY_TEXT,
+    INVALID_USER_QUERY_TEXT,
     MANAGE_USERS_ACTION,
     REMOVE_ROLE_PREFIX,
     ROLE_ASSIGNED_TEXT,
@@ -58,6 +61,7 @@ from presentation.telegram.navigation import (
     NavigationTarget,
 )
 from presentation.telegram.presenters import RolePanel, RolePanelCallback
+from presentation.telegram.states import RoleManagementStates
 from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
@@ -213,6 +217,71 @@ def sent_message_id(
     )
 
 
+async def test_invalid_user_query_stays_visible_and_renders_compact_error(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    sender = telegram_user(
+        22_500_000 + uuid4().int % 1_000_000_000,
+        first_name="Admin",
+        username=f"admin_{uuid4().hex[:8]}",
+    )
+    try:
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=1,
+                sender=sender,
+                data=MANAGE_USERS_ACTION,
+            ),
+        )
+
+        invalid_offset = len(methods)
+        await dispatcher.feed_update(
+            bot,
+            message_update(update_id=2, sender=sender, text="   "),
+        )
+        invalid_methods = methods[invalid_offset:]
+        assert not any(
+            isinstance(method, DeleteMessage) for method in invalid_methods
+        )
+        error_screen = next(
+            method
+            for method in invalid_methods
+            if isinstance(method, SendMessage)
+        )
+        assert error_screen.text == INVALID_USER_QUERY_TEXT
+        assert error_screen.reply_markup is not None
+        assert not any(
+            isinstance(method, SendPhoto) for method in invalid_methods
+        )
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=sender.id,
+            user_id=sender.id,
+        )
+        assert await dispatcher.storage.get_state(storage_key) == (
+            RoleManagementStates.waiting_for_query.state
+        )
+    finally:
+        await container.close()
+
+
 @pytest.mark.parametrize(
     "administrative_role",
     [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
@@ -326,7 +395,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
         prompt_screen = next(
             method
             for method in begin_search_methods
-            if isinstance(method, SendPhoto)
+            if isinstance(method, SendMessage)
         )
         prompt_message_id = sent_message_id(sent_methods, prompt_screen)
         assert begin_search_methods.index(
@@ -335,8 +404,11 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
         assert menu_keyboard_cleanup.message_id == menu_message_id
         assert menu_keyboard_cleanup.reply_markup is None
         assert prompt_message_id != menu_message_id
-        assert prompt_screen.caption == ENTER_USER_QUERY_TEXT
-        assert prompt_screen.photo == "admin-banner-file-id"
+        assert prompt_screen.text == ENTER_USER_QUERY_TEXT
+        assert prompt_screen.reply_markup is not None
+        assert not any(
+            isinstance(method, SendPhoto) for method in begin_search_methods
+        )
 
         search_result_offset = len(sent_methods)
         await dispatcher.feed_update(
@@ -348,6 +420,11 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             ),
         )
         search_result_methods = sent_methods[search_result_offset:]
+        query_cleanup = next(
+            method
+            for method in search_result_methods
+            if isinstance(method, DeleteMessage)
+        )
         prompt_keyboard_cleanup = next(
             method
             for method in search_result_methods
@@ -359,6 +436,10 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             if isinstance(method, SendPhoto)
         )
         result_message_id = sent_message_id(sent_methods, result_screen)
+        assert query_cleanup.message_id == 3
+        assert search_result_methods.index(query_cleanup) < (
+            search_result_methods.index(prompt_keyboard_cleanup)
+        )
         assert prompt_keyboard_cleanup.message_id == prompt_message_id
         assert prompt_keyboard_cleanup.reply_markup is None
         assert result_message_id != prompt_message_id
@@ -569,7 +650,7 @@ async def test_administrative_actor_assigns_role_through_telegram_flow(
             if isinstance(method, SendPhoto)
             and method.chat_id == admin_telegram_id
         ]
-        assert len(admin_sends) == 3
+        assert len(admin_sends) == 2
         assert all(
             method.message_id == result_message_id
             for method in sent_methods

@@ -9,6 +9,7 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageMedia,
+    EditMessageReplyMarkup,
     SendPhoto,
     TelegramMethod,
 )
@@ -386,8 +387,12 @@ async def test_registered_command_recovers_from_stale_fsm_and_ui_anchor(
             ),
         )
         recovery_methods = methods[recovery_offset:]
-        assert len(recovery_methods) == 1
-        recovered = recovery_methods[0]
+        assert len(recovery_methods) == 2
+        keyboard_cleanup = recovery_methods[0]
+        recovered = recovery_methods[1]
+        assert isinstance(keyboard_cleanup, EditMessageReplyMarkup)
+        assert keyboard_cleanup.message_id == 1
+        assert keyboard_cleanup.reply_markup is None
         assert isinstance(recovered, SendPhoto)
         assert recovered.photo == expected_banner
         assert recovered.caption == expected_caption
