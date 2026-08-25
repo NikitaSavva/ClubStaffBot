@@ -6,6 +6,7 @@ from infrastructure.database.models.enums import (
     AttendanceStatus,
     NotificationStatus,
     SubscriptionStatus,
+    TrainingGroupType,
     TrainingSessionStatus,
 )
 from infrastructure.database.models.identity import (
@@ -43,6 +44,7 @@ __all__ = [
     "SubscriptionModel",
     "SubscriptionPlanModel",
     "SubscriptionStatus",
+    "TrainingGroupType",
     "TrainingGroupModel",
     "TrainingSessionModel",
     "TrainingSessionStatus",

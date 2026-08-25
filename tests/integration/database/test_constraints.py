@@ -23,6 +23,7 @@ from infrastructure.database.models import (
     SubscriptionPlanModel,
     SubscriptionStatus,
     TrainingGroupModel,
+    TrainingGroupType,
     TrainingSessionModel,
     TrainingSessionStatus,
     UserModel,
@@ -85,7 +86,7 @@ async def add_athlete(
 
 async def add_training_group(
     session: AsyncSession,
-    trainer_id: int,
+    trainer_id: int | None,
 ) -> TrainingGroupModel:
     direction = SportDirectionModel(code=f"direction-{uuid4()}", name="MMA", is_active=True)
     session.add(direction)
@@ -95,6 +96,7 @@ async def add_training_group(
         direction_id=direction.id,
         trainer_id=trainer_id,
         name="Morning group",
+        group_type=TrainingGroupType.REGULAR,
         is_active=True,
     )
     session.add(group)
@@ -325,6 +327,15 @@ async def test_training_session_rule_and_start_are_unique(
             trainer_id=trainer.id,
             schedule_rule_id=rule.id,
         )
+
+
+async def test_training_group_can_exist_without_trainer(
+    db_session: AsyncSession,
+) -> None:
+    group = await add_training_group(db_session, trainer_id=None)
+
+    assert group.trainer_id is None
+    assert group.group_type is TrainingGroupType.REGULAR
 
 
 async def test_two_active_subscriptions_for_one_athlete_are_rejected(
