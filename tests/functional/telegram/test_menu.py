@@ -8,7 +8,6 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
-    EditMessageMedia,
     SendPhoto,
     TelegramMethod,
 )
@@ -24,6 +23,7 @@ from domain.identity import SystemRoleCode
 from entrypoints.bot import create_dispatcher
 from infrastructure.database.models import RoleModel, UserModel, UserRoleModel
 from presentation.telegram.handlers.menu import USER_NOT_REGISTERED_TEXT
+from presentation.telegram.middlewares.active_screen import STALE_SCREEN_TEXT
 from presentation.telegram.navigation import (
     BACK_BUTTON_TEXT,
     NavigationAction,
@@ -67,6 +67,7 @@ def callback_update(
     update_id: int,
     telegram_id: int,
     data: str,
+    message_id: int = 1,
 ) -> Update:
     return Update(
         update_id=update_id,
@@ -81,7 +82,7 @@ def callback_update(
             chat_instance=f"chat-{telegram_id}",
             data=data,
             message=Message(
-                message_id=1,
+                message_id=message_id,
                 date=NOW,
                 chat=Chat(id=telegram_id, type=ChatType.PRIVATE),
                 from_user=BOT_USER,
@@ -271,6 +272,7 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
                 update_id=2,
                 telegram_id=telegram_id,
                 data=select_admin,
+                message_id=1,
             ),
         )
         await dispatcher.feed_update(
@@ -278,33 +280,51 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
             callback_update(
                 update_id=3,
                 telegram_id=telegram_id,
-                data=back_to_selector,
+                data=select_admin,
+                message_id=1,
             ),
         )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                telegram_id=telegram_id,
+                data=back_to_selector,
+                message_id=3,
+            ),
+        )
+
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=telegram_id,
+            user_id=telegram_id,
+        )
+        ui_data = await dispatcher.storage.get_data(storage_key)
     finally:
         await container.close()
 
     sends = [method for method in methods if isinstance(method, SendPhoto)]
-    edits = [method for method in methods if isinstance(method, EditMessageMedia)]
     answers = [
         method for method in methods if isinstance(method, AnswerCallbackQuery)
     ]
-    assert len(sends) == 1
+    assert len(sends) == 3
     assert sends[0].photo == "role-selector-banner-file-id"
-    assert len(edits) == 2
-    assert edits[0].message_id == 1
-    assert edits[0].media.media == "admin-banner-file-id"
-    assert edits[0].reply_markup is not None
+    assert sends[1].photo == "admin-banner-file-id"
+    assert sends[1].reply_markup is not None
     assert any(
         button.callback_data == back_to_selector
-        for row in edits[0].reply_markup.inline_keyboard
+        for row in sends[1].reply_markup.inline_keyboard
         for button in row
     )
-    assert edits[1].message_id == 1
-    assert edits[1].media.media == "role-selector-banner-file-id"
-    assert len(answers) == 2
-    assert methods.index(answers[0]) < methods.index(edits[0])
-    assert methods.index(answers[1]) < methods.index(edits[1])
+    assert sends[2].photo == "role-selector-banner-file-id"
+    assert sends[0].reply_markup is not None
+    assert sends[1].reply_markup is not None
+    assert len(answers) == 3
+    assert answers[1].text == STALE_SCREEN_TEXT
+    positions = {id(method): index for index, method in enumerate(methods)}
+    assert positions[id(answers[0])] < positions[id(sends[1])]
+    assert positions[id(answers[2])] < positions[id(sends[2])]
+    assert ui_data["ui_context"]["active_message"]["message_id"] == 6
 
 
 @pytest.mark.parametrize("command", ["/start", "/menu", "/start stale-token"])

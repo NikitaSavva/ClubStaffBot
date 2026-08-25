@@ -24,6 +24,7 @@ from presentation.telegram.screen import (
     TelegramScreen,
     TelegramScreenRenderer,
 )
+from presentation.telegram.ui_context import clear_flow_context
 
 INVALID_INVITE_TEXT = "Ссылка-приглашение недействительна или больше не активна."
 REGISTRATION_UNAVAILABLE_TEXT = (
@@ -46,7 +47,7 @@ async def handle_start(
     telegram_user = message.from_user
     invite_token = command.args
     if telegram_user is None:
-        await state.clear()
+        await clear_flow_context(state)
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
@@ -107,7 +108,7 @@ async def handle_start(
         )
         return
 
-    await state.clear()
+    await clear_flow_context(state)
     await renderer.render(
         state=state,
         chat_id=message.chat.id,

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock
 
+import pytest
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
@@ -82,10 +83,11 @@ async def test_edit_mode_edits_active_screen() -> None:
     assert await get_active_ui_message(state) == active
 
 
-async def test_new_mode_clears_keyboard_and_sends_new_active_screen() -> None:
+async def test_new_mode_keeps_old_keyboard_and_sends_new_active_screen() -> None:
     renderer, bot = make_renderer()
     state = make_state()
-    bot.send_photo.side_effect = [bot_message(6), bot_message(7)]
+    bot.send_photo.return_value = bot_message(6)
+    bot.send_message.return_value = bot_message(7)
     keyboard = build_inline_keyboard(
         (build_callback_button(text="Start", callback_data="start"),)
     )
@@ -105,17 +107,13 @@ async def test_new_mode_clears_keyboard_and_sends_new_active_screen() -> None:
         screen=TelegramScreen(
             text="Input prompt",
             reply_markup=keyboard,
-            banner=BannerContext.ADMIN_PANEL,
         ),
         mode=RenderMode.NEW,
     )
 
-    assert bot.send_photo.await_count == 2
-    bot.edit_message_reply_markup.assert_awaited_once_with(
-        chat_id=CHAT_ID,
-        message_id=previous.message_id,
-        reply_markup=None,
-    )
+    assert bot.send_photo.await_count == 1
+    assert bot.send_message.await_count == 1
+    bot.edit_message_reply_markup.assert_not_awaited()
     bot.edit_message_caption.assert_not_awaited()
     assert active.message_id == 7
     assert active.message_id != previous.message_id
@@ -127,11 +125,14 @@ async def test_text_to_media_sends_replacement_screen() -> None:
     state = make_state()
     bot.send_message.return_value = bot_message(10)
     bot.send_photo.return_value = bot_message(11)
+    keyboard = build_inline_keyboard(
+        (build_callback_button(text="Continue", callback_data="continue"),)
+    )
 
     await renderer.render(
         state=state,
         chat_id=CHAT_ID,
-        screen=TelegramScreen(text="Text screen"),
+        screen=TelegramScreen(text="Text screen", reply_markup=keyboard),
     )
     active = await renderer.render(
         state=state,
@@ -144,6 +145,7 @@ async def test_text_to_media_sends_replacement_screen() -> None:
 
     assert bot.send_message.await_count == 1
     assert bot.send_photo.await_count == 1
+    bot.edit_message_reply_markup.assert_not_awaited()
     bot.edit_message_media.assert_not_awaited()
     assert active.message_id == 11
     assert active.kind is UiMessageKind.MEDIA
@@ -190,12 +192,16 @@ async def test_media_to_text_sends_replacement_screen() -> None:
     state = make_state()
     bot.send_photo.return_value = bot_message(30)
     bot.send_message.return_value = bot_message(31)
+    keyboard = build_inline_keyboard(
+        (build_callback_button(text="Continue", callback_data="continue"),)
+    )
 
     await renderer.render(
         state=state,
         chat_id=CHAT_ID,
         screen=TelegramScreen(
             text="Media screen",
+            reply_markup=keyboard,
             banner=BannerContext.ADMIN_PANEL,
         ),
     )
@@ -207,6 +213,7 @@ async def test_media_to_text_sends_replacement_screen() -> None:
 
     assert bot.send_photo.await_count == 1
     assert bot.send_message.await_count == 1
+    bot.edit_message_reply_markup.assert_not_awaited()
     assert active.message_id == 31
     assert active.kind is UiMessageKind.TEXT
 
@@ -215,6 +222,9 @@ async def test_edit_failure_sends_new_active_screen() -> None:
     renderer, bot = make_renderer()
     state = make_state()
     bot.send_message.side_effect = [bot_message(40), bot_message(41)]
+    keyboard = build_inline_keyboard(
+        (build_callback_button(text="Continue", callback_data="continue"),)
+    )
     bot.edit_message_text.side_effect = TelegramBadRequest(
         method=EditMessageText(
             chat_id=CHAT_ID,
@@ -227,7 +237,7 @@ async def test_edit_failure_sends_new_active_screen() -> None:
     await renderer.render(
         state=state,
         chat_id=CHAT_ID,
-        screen=TelegramScreen(text="Initial"),
+        screen=TelegramScreen(text="Initial", reply_markup=keyboard),
     )
     active = await renderer.render(
         state=state,
@@ -236,9 +246,36 @@ async def test_edit_failure_sends_new_active_screen() -> None:
     )
 
     bot.edit_message_text.assert_awaited_once()
+    bot.edit_message_reply_markup.assert_not_awaited()
     assert bot.send_message.await_count == 2
     assert active.message_id == 41
     assert await get_active_ui_message(state) == active
+
+
+async def test_new_send_failure_keeps_previous_active_context() -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    keyboard = build_inline_keyboard(
+        (build_callback_button(text="Continue", callback_data="continue"),)
+    )
+    bot.send_message.side_effect = [bot_message(45), RuntimeError("send failed")]
+
+    previous = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(text="Initial", reply_markup=keyboard),
+    )
+
+    with pytest.raises(RuntimeError, match="send failed"):
+        await renderer.render(
+            state=state,
+            chat_id=CHAT_ID,
+            screen=TelegramScreen(text="Replacement", reply_markup=keyboard),
+            mode=RenderMode.NEW,
+        )
+
+    bot.edit_message_reply_markup.assert_not_awaited()
+    assert await get_active_ui_message(state) == previous
 
 
 async def test_message_not_modified_does_not_send_duplicate() -> None:

@@ -11,10 +11,12 @@ from presentation.telegram.handlers.role_management import (
     create_role_management_router,
 )
 from presentation.telegram.handlers.start import create_start_router
+from presentation.telegram.middlewares import ActiveScreenCallbackMiddleware
 
 
 def create_telegram_router() -> Router:
     router = Router(name=__name__)
+    router.callback_query.outer_middleware(ActiveScreenCallbackMiddleware())
     router.include_router(create_start_router())
     router.include_router(create_menu_router())
     router.include_router(create_account_link_router())

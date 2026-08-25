@@ -68,7 +68,7 @@ async def handle_menu(
 ) -> None:
     telegram_user = message.from_user
     if telegram_user is None:
-        await state.clear()
+        await clear_flow_context(state)
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
@@ -181,7 +181,7 @@ async def recover_home_screen(
     notice: str | None = None,
 ) -> None:
     """Rebuild the root UI without trusting persisted Presentation state."""
-    await state.clear()
+    await clear_flow_context(state)
     await show_home_screen(
         chat_id=chat_id,
         telegram_id=telegram_id,
@@ -203,6 +203,7 @@ async def show_role_panel(
     renderer: TelegramScreenRenderer,
     editable_message: Message | None = None,
     notice: str | None = None,
+    mode: RenderMode = RenderMode.EDIT,
 ) -> None:
     context = await _load_menu_context(
         telegram_id=telegram_id,
@@ -217,6 +218,7 @@ async def show_role_panel(
             renderer=renderer,
             editable_message=editable_message,
             notice=notice,
+            mode=mode,
         )
         return
     await _render_role_panel(
@@ -227,6 +229,7 @@ async def show_role_panel(
         context=context,
         role=role,
         notice=notice,
+        mode=mode,
     )
 
 
@@ -239,6 +242,7 @@ async def show_active_role_panel(
     renderer: TelegramScreenRenderer,
     editable_message: Message | None = None,
     notice: str | None = None,
+    mode: RenderMode = RenderMode.EDIT,
 ) -> None:
     navigation = await get_navigation_context(state)
     try:
@@ -258,6 +262,7 @@ async def show_active_role_panel(
             renderer=renderer,
             editable_message=editable_message,
             notice=notice,
+            mode=mode,
         )
         return
     await show_role_panel(
@@ -269,6 +274,7 @@ async def show_active_role_panel(
         renderer=renderer,
         editable_message=editable_message,
         notice=notice,
+        mode=mode,
     )
 
 
@@ -294,6 +300,7 @@ async def handle_select_role_panel(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 
@@ -317,6 +324,7 @@ async def handle_back_to_role_selector(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 
@@ -340,6 +348,7 @@ async def handle_back_to_role_panel(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 
@@ -362,6 +371,7 @@ async def handle_legacy_back_to_menu(
         interactor=interactor,
         renderer=renderer,
         editable_message=message,
+        mode=RenderMode.NEW,
     )
 
 

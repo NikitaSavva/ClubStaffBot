@@ -25,6 +25,7 @@ from presentation.telegram.handlers.menu import (
     set_administrative_navigation_context,
     show_active_role_panel,
 )
+from presentation.telegram.input_cleanup import cleanup_accepted_user_input
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
@@ -58,18 +59,28 @@ INVALID_FIRST_NAME_TEXT = (
     f"{CREATE_ATHLETE_TITLE}\n\n"
     "Имя не может быть пустым. Введите имя еще раз."
 )
-ENTER_LAST_NAME_TEXT = f"{CREATE_ATHLETE_TITLE}\n\nВведите фамилию спортсмена."
+ENTER_LAST_NAME_TEXT = (
+    f"{CREATE_ATHLETE_TITLE}\n\n"
+    "Имя: {first_name}\n\n"
+    "Введите фамилию спортсмена."
+)
 INVALID_LAST_NAME_TEXT = (
     f"{CREATE_ATHLETE_TITLE}\n\n"
+    "Имя: {first_name}\n\n"
     "Фамилия не может быть пустой. Введите фамилию еще раз."
 )
 ENTER_BIRTH_DATE_TEXT = (
     f"{CREATE_ATHLETE_TITLE}\n\n"
+    "Имя: {first_name}\n"
+    "Фамилия: {last_name}\n\n"
     "Введите дату рождения в формате DD.MM.YYYY."
 )
 INVALID_BIRTH_DATE_TEXT = (
     f"{CREATE_ATHLETE_TITLE}\n\n"
-    "Введите корректную календарную дату в формате DD.MM.YYYY."
+    "Имя: {first_name}\n"
+    "Фамилия: {last_name}\n\n"
+    "Некорректная дата.\n"
+    "Введите дату рождения в формате DD.MM.YYYY."
 )
 CONFIRM_CREATE_ATHLETE_TEXT = (
     f"{CREATE_ATHLETE_TITLE}\n\n"
@@ -82,7 +93,11 @@ CREATE_ATHLETE_CANCELLED_TEXT = "Создание спортсмена отме�
 CREATE_ATHLETE_PERMISSION_DENIED_TEXT = (
     "Действие доступно только администратору или владельцу."
 )
-CREATE_ATHLETE_SUCCESS_TEXT = "Спортсмен {first_name} {last_name} создан."
+CREATE_ATHLETE_SUCCESS_TEXT = (
+    "Спортсмен создан\n\n"
+    "{first_name} {last_name}\n"
+    "Дата рождения: {birth_date}"
+)
 
 _BIRTH_DATE_PATTERN = re.compile(r"\d{2}\.\d{2}\.\d{4}")
 
@@ -184,11 +199,12 @@ async def handle_create_athlete_first_name(
 
     await set_flow_context(state, {"first_name": first_name})
     await state.set_state(CreateAthleteStates.waiting_for_last_name)
+    await cleanup_accepted_user_input(message)
     await _render_prompt(
         message=message,
         state=state,
         renderer=renderer,
-        text=ENTER_LAST_NAME_TEXT,
+        text=ENTER_LAST_NAME_TEXT.format(first_name=first_name),
         back_target=NavigationTarget.CREATE_ATHLETE_FIRST_NAME,
         mode=RenderMode.NEW,
     )
@@ -218,7 +234,7 @@ async def handle_create_athlete_last_name(
             message=message,
             state=state,
             renderer=renderer,
-            text=INVALID_LAST_NAME_TEXT,
+            text=INVALID_LAST_NAME_TEXT.format(first_name=first_name),
             back_target=NavigationTarget.CREATE_ATHLETE_FIRST_NAME,
             mode=RenderMode.NEW,
         )
@@ -229,11 +245,15 @@ async def handle_create_athlete_last_name(
         {"first_name": first_name, "last_name": last_name},
     )
     await state.set_state(CreateAthleteStates.waiting_for_birth_date)
+    await cleanup_accepted_user_input(message)
     await _render_prompt(
         message=message,
         state=state,
         renderer=renderer,
-        text=ENTER_BIRTH_DATE_TEXT,
+        text=ENTER_BIRTH_DATE_TEXT.format(
+            first_name=first_name,
+            last_name=last_name,
+        ),
         back_target=NavigationTarget.CREATE_ATHLETE_LAST_NAME,
         mode=RenderMode.NEW,
     )
@@ -264,7 +284,10 @@ async def handle_create_athlete_birth_date(
             message=message,
             state=state,
             renderer=renderer,
-            text=INVALID_BIRTH_DATE_TEXT,
+            text=INVALID_BIRTH_DATE_TEXT.format(
+                first_name=first_name,
+                last_name=last_name,
+            ),
             back_target=NavigationTarget.CREATE_ATHLETE_LAST_NAME,
             mode=RenderMode.NEW,
         )
@@ -279,10 +302,11 @@ async def handle_create_athlete_birth_date(
         },
     )
     await state.set_state(CreateAthleteStates.waiting_for_confirmation)
+    await cleanup_accepted_user_input(message)
     await renderer.render(
         state=state,
         chat_id=message.chat.id,
-        screen=_admin_screen(
+        screen=_compact_screen(
             _confirmation_text(first_name, last_name, birth_date),
             build_create_athlete_confirmation_keyboard(),
         ),
@@ -338,7 +362,7 @@ async def handle_back_to_create_athlete_last_name(
         message=message,
         state=state,
         renderer=renderer,
-        text=ENTER_LAST_NAME_TEXT,
+        text=ENTER_LAST_NAME_TEXT.format(first_name=first_name),
         back_target=NavigationTarget.CREATE_ATHLETE_FIRST_NAME,
         mode=RenderMode.EDIT,
         editable_message=message,
@@ -377,7 +401,10 @@ async def handle_back_to_create_athlete_birth_date(
         message=message,
         state=state,
         renderer=renderer,
-        text=ENTER_BIRTH_DATE_TEXT,
+        text=ENTER_BIRTH_DATE_TEXT.format(
+            first_name=first_name,
+            last_name=last_name,
+        ),
         back_target=NavigationTarget.CREATE_ATHLETE_LAST_NAME,
         mode=RenderMode.EDIT,
         editable_message=message,
@@ -454,6 +481,7 @@ async def handle_confirm_create_athlete(
             CREATE_ATHLETE_SUCCESS_TEXT.format(
                 first_name=result.first_name,
                 last_name=result.last_name,
+                birth_date=result.birth_date.strftime("%d.%m.%Y"),
             ),
             build_inline_keyboard((build_menu_button(),)),
         ),
@@ -476,7 +504,8 @@ async def _cancel_create_athlete(
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
-            screen=_admin_screen(CREATE_ATHLETE_CANCELLED_TEXT, None),
+            screen=_compact_screen(CREATE_ATHLETE_CANCELLED_TEXT, None),
+            mode=RenderMode.NEW,
             editable_message=editable_message,
         )
         return
@@ -488,6 +517,7 @@ async def _cancel_create_athlete(
         renderer=renderer,
         editable_message=editable_message,
         notice=CREATE_ATHLETE_CANCELLED_TEXT,
+        mode=RenderMode.NEW,
     )
 
 
@@ -621,7 +651,7 @@ async def _render_prompt(
     await renderer.render(
         state=state,
         chat_id=message.chat.id,
-        screen=_admin_screen(
+        screen=_compact_screen(
             text,
             build_inline_keyboard(tuple(buttons)),
         ),
@@ -655,3 +685,10 @@ def _admin_screen(
         reply_markup=reply_markup,
         banner=BannerContext.ADMIN_PANEL,
     )
+
+
+def _compact_screen(
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> TelegramScreen:
+    return TelegramScreen(text=text, reply_markup=reply_markup)

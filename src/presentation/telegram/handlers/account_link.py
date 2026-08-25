@@ -41,6 +41,7 @@ from presentation.telegram.presenters.athletes import (
 from presentation.telegram.qr import build_bot_start_deep_link, generate_qr_png
 from presentation.telegram.screen import (
     BannerContext,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
@@ -89,6 +90,11 @@ async def handle_list_unlinked_athletes(
     message = callback.message
     if not isinstance(message, Message):
         return
+    mode = (
+        RenderMode.NEW
+        if callback.data == LINK_ACCOUNT_ACTION
+        else RenderMode.EDIT
+    )
 
     try:
         athletes = await interactor(
@@ -106,6 +112,7 @@ async def handle_list_unlinked_athletes(
                 LINK_PERMISSION_DENIED_TEXT,
                 build_inline_keyboard((build_menu_button(),)),
             ),
+            mode=mode,
             editable_message=message,
         )
         return
@@ -128,6 +135,7 @@ async def handle_list_unlinked_athletes(
         state=state,
         chat_id=message.chat.id,
         screen=screen,
+        mode=mode,
         editable_message=message,
     )
 
