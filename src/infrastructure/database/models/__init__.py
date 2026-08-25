@@ -22,6 +22,7 @@ from infrastructure.database.models.subscriptions import (
     SubscriptionPlanModel,
 )
 from infrastructure.database.models.training import (
+    GroupNameModel,
     ScheduleRuleModel,
     SportDirectionModel,
     TrainingGroupModel,
@@ -36,6 +37,7 @@ __all__ = [
     "AuditLogModel",
     "Base",
     "BotInviteModel",
+    "GroupNameModel",
     "NotificationModel",
     "NotificationStatus",
     "RoleModel",

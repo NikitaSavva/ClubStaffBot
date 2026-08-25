@@ -110,6 +110,15 @@ EXPECTED_SCHEDULE = set().union(
         time(21, 30),
     ),
 )
+EXPECTED_GROUP_NAMES = {
+    "Сборная",
+    "Дети 9–14 лет",
+    "Мини-группа",
+    "Подростки",
+    "Взрослые",
+    "Девушки",
+    "Дети 6–9 лет",
+}
 
 
 async def test_seeded_club_structure_and_schedule(
@@ -259,7 +268,8 @@ async def _assert_seeded_club_structure(
                 "SELECT column_name, is_nullable, column_default, udt_name "
                 "FROM information_schema.columns "
                 "WHERE table_name = 'training_groups' AND "
-                "column_name IN ('group_type', 'trainer_id')"
+                "column_name IN "
+                "('group_type', 'trainer_id', 'name', 'name_id')"
             )
         )
     ).mappings().all()
@@ -268,14 +278,31 @@ async def _assert_seeded_club_structure(
     assert columns["group_type"]["column_default"] is None
     assert columns["group_type"]["udt_name"] == "training_group_type"
     assert columns["trainer_id"]["is_nullable"] == "YES"
+    assert columns["name_id"]["is_nullable"] == "NO"
+    assert "name" not in columns
+
+    names = (
+        await connection.execute(
+            text(
+                "SELECT id, name FROM group_names "
+                "WHERE name IN ('Сборная', 'Дети 9–14 лет', "
+                "'Мини-группа', 'Подростки', 'Взрослые', 'Девушки', "
+                "'Дети 6–9 лет')"
+            )
+        )
+    ).mappings().all()
+    assert len(names) == len(EXPECTED_GROUP_NAMES) == 7
+    assert {row["name"] for row in names} == EXPECTED_GROUP_NAMES
 
     groups = (
         await connection.execute(
             text(
-                "SELECT g.id, d.name AS direction, g.name, "
+                "SELECT g.id, d.name AS direction, group_name.id AS name_id, "
+                "group_name.name, "
                 "CAST(g.group_type AS VARCHAR) AS group_type, g.trainer_id "
                 "FROM training_groups AS g "
                 "JOIN sport_directions AS d ON d.id = g.direction_id "
+                "JOIN group_names AS group_name ON group_name.id = g.name_id "
                 "WHERE g.trainer_id IS NULL AND "
                 "d.name IN ('Кикбоксинг', 'MMA') "
                 "ORDER BY g.id"
@@ -298,15 +325,22 @@ async def _assert_seeded_club_structure(
     )
     assert group_names[("Кикбоксинг", "Взрослые")] == 2
     assert group_names[("Кикбоксинг", "Девушки")] == 2
+    assert len(
+        {group["name_id"] for group in groups if group["name"] == "Взрослые"}
+    ) == 1
+    assert len(
+        {group["name_id"] for group in groups if group["name"] == "Девушки"}
+    ) == 1
 
     rules = (
         await connection.execute(
             text(
-                "SELECT d.name AS direction, g.name AS group_name, "
+                "SELECT d.name AS direction, group_name.name AS group_name, "
                 "r.weekday, r.start_time, r.end_time, r.valid_from, "
                 "r.valid_until, r.is_active "
                 "FROM schedule_rules AS r "
                 "JOIN training_groups AS g ON g.id = r.group_id "
+                "JOIN group_names AS group_name ON group_name.id = g.name_id "
                 "JOIN sport_directions AS d ON d.id = g.direction_id "
                 "WHERE g.trainer_id IS NULL AND "
                 "d.name IN ('Кикбоксинг', 'MMA')"
@@ -352,10 +386,13 @@ async def _assert_legacy_data_at_head(
                 await connection.execute(
                     text(
                         "SELECT d.code AS direction_code, "
-                        "d.name AS direction_name, g.name AS group_name, "
+                        "d.name AS direction_name, "
+                        "group_name.name AS group_name, "
                         "CAST(g.group_type AS VARCHAR) AS group_type, "
                         "g.trainer_id, r.weekday, r.start_time, r.end_time "
                         "FROM training_groups AS g "
+                        "JOIN group_names AS group_name "
+                        "ON group_name.id = g.name_id "
                         "JOIN sport_directions AS d ON d.id = g.direction_id "
                         "JOIN schedule_rules AS r ON r.group_id = g.id "
                         "WHERE d.code IN ('BOXING', 'LEGACY_MMA') "
