@@ -8,12 +8,31 @@ from aiogram import Bot
 from aiogram.enums import ChatType
 from aiogram.types import Chat, Message, PhotoSize
 
-from entrypoints.upload_telegram_banners import (
+from scripts.upload_telegram_banners import (
     BannerPaths,
+    build_parser,
     select_reusable_file_id,
     upload_banners,
     validate_banner_paths,
 )
+
+
+def test_parser_requires_explicit_chat_id() -> None:
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args(
+            [
+                "--admin-panel",
+                "admin.png",
+                "--trainer-panel",
+                "trainer.png",
+                "--athlete-panel",
+                "athlete.png",
+                "--role-selector",
+                "selector.png",
+            ]
+        )
+
+    assert error.value.code == 2
 
 
 def make_message(*photos: PhotoSize) -> Message:

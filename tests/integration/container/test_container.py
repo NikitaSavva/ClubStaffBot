@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from application.athletes import CreateManualAthleteInteractor
 from application.common import UnitOfWork
 from application.identity import (
+    AssignOwnerInteractor,
     AssignUserRoleInteractor,
     CreateAthleteAccountLinkInviteInteractor,
     GetUserMenuContextInteractor,
@@ -52,7 +53,6 @@ def settings() -> Settings:
         redis_port=6379,
         redis_db=0,
         telegram_bot_token="123456789:test-token",
-        telegram_owner_id=987654321,
         admin_panel_banner_file_id="admin-banner-file-id",
         trainer_panel_banner_file_id="trainer-banner-file-id",
         athlete_panel_banner_file_id="athlete-banner-file-id",
@@ -115,6 +115,9 @@ async def test_container_resolves_app_and_request_dependencies(
             assign_user_role_interactor = await request_container.get(
                 AssignUserRoleInteractor
             )
+            assign_owner_interactor = await request_container.get(
+                AssignOwnerInteractor
+            )
             remove_user_role_interactor = await request_container.get(
                 RemoveUserRoleInteractor
             )
@@ -155,6 +158,7 @@ async def test_container_resolves_app_and_request_dependencies(
                 assign_user_role_interactor,
                 AssignUserRoleInteractor,
             )
+            assert isinstance(assign_owner_interactor, AssignOwnerInteractor)
             assert isinstance(
                 remove_user_role_interactor,
                 RemoveUserRoleInteractor,
@@ -189,6 +193,9 @@ async def test_container_resolves_app_and_request_dependencies(
             assert (
                 assign_user_role_interactor._audit_log is audit_repository
             )
+            assert assign_owner_interactor._users is user_repository
+            assert assign_owner_interactor._roles is role_repository
+            assert assign_owner_interactor._audit_log is audit_repository
             assert remove_user_role_interactor._users is user_repository
             assert remove_user_role_interactor._roles is role_repository
             assert remove_user_role_interactor._audit_log is audit_repository

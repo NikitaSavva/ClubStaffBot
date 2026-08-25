@@ -89,3 +89,10 @@ class RemoveUserRoleResult:
     role_was_removed: bool
     current_role_codes: tuple[SystemRoleCode, ...]
     target_user: BotUserSummary
+
+
+@dataclass(frozen=True, slots=True)
+class AssignOwnerResult:
+    target_user_id: int
+    owner_was_assigned: bool
+    current_role_codes: tuple[SystemRoleCode, ...]

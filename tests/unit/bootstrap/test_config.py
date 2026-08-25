@@ -15,7 +15,6 @@ REQUIRED_VARIABLES = (
     "REDIS_PORT",
     "REDIS_DB",
     "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_OWNER_ID",
     "ADMIN_PANEL_BANNER_FILE_ID",
     "TRAINER_PANEL_BANNER_FILE_ID",
     "ATHLETE_PANEL_BANNER_FILE_ID",
@@ -33,7 +32,6 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("REDIS_PORT", "6379")
     monkeypatch.setenv("REDIS_DB", "1")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:test-token")
-    monkeypatch.setenv("TELEGRAM_OWNER_ID", "987654321")
     monkeypatch.setenv("ADMIN_PANEL_BANNER_FILE_ID", "admin-file-id")
     monkeypatch.setenv("TRAINER_PANEL_BANNER_FILE_ID", "trainer-file-id")
     monkeypatch.setenv("ATHLETE_PANEL_BANNER_FILE_ID", "athlete-file-id")
@@ -46,7 +44,6 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     assert settings.redis_url == "redis://cache:6379/1"
     assert settings.telegram_bot_token.get_secret_value() == "123456789:test-token"
-    assert settings.telegram_owner_id == 987654321
     assert settings.admin_panel_banner_file_id == "admin-file-id"
     assert settings.trainer_panel_banner_file_id == "trainer-file-id"
     assert settings.athlete_panel_banner_file_id == "athlete-file-id"
@@ -72,7 +69,6 @@ def test_settings_loads_from_dotenv(
                 "REDIS_PORT=6379",
                 "REDIS_DB=0",
                 "TELEGRAM_BOT_TOKEN=123456789:test-token",
-                "TELEGRAM_OWNER_ID=987654321",
                 "ADMIN_PANEL_BANNER_FILE_ID=admin-file-id",
                 "TRAINER_PANEL_BANNER_FILE_ID=trainer-file-id",
                 "ATHLETE_PANEL_BANNER_FILE_ID=athlete-file-id",

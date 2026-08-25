@@ -20,8 +20,7 @@ cp .env.example .env
 
 Required Telegram values:
 
-- `TELEGRAM_BOT_TOKEN` — token issued by BotFather;
-- `TELEGRAM_OWNER_ID` — numeric Telegram ID of the bot owner.
+- `TELEGRAM_BOT_TOKEN` — token issued by BotFather.
 
 Never commit `.env` or print the bot token in logs.
 
@@ -51,7 +50,7 @@ PYTHONPATH=src python -m entrypoints.bot
 After applying migrations, create the invite and QR in one command:
 
 ```bash
-PYTHONPATH=src python -m entrypoints.create_dev_invite \
+PYTHONPATH=src python -m scripts.create_dev_invite \
   --bot-username <bot_username>
 ```
 
@@ -60,6 +59,30 @@ writes the QR image to `static/reception-invite.png`. The generated `static/`
 directory is ignored by Git and excluded from the Docker build context. The QR
 contains the raw invite token, so treat the generated file as a registration
 credential and expose it only at reception.
+
+### Operator scripts
+
+After the system-role bootstrap has created the OWNER role, assign it to an
+existing registered User by Telegram ID:
+
+```bash
+PYTHONPATH=src python -m scripts.assign_owner <telegram_id>
+```
+
+The command is idempotent for the current OWNER and refuses to transfer OWNER
+to another User. OWNER assignment and authorization use the database role as
+their source of truth.
+
+Upload Telegram role banners once and print their reusable `file_id` values:
+
+```bash
+PYTHONPATH=src python -m scripts.upload_telegram_banners \
+  --admin-panel <path> \
+  --trainer-panel <path> \
+  --athlete-panel <path> \
+  --role-selector <path> \
+  --chat-id <telegram_chat_id>
+```
 
 ## Production run
 

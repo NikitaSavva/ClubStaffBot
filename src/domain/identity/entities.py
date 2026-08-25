@@ -15,6 +15,7 @@ class SystemRoleCode(StrEnum):
     ATHLETE = "ATHLETE"
     TRAINER = "TRAINER"
     ADMINISTRATOR = "ADMINISTRATOR"
+    OWNER = "OWNER"
 
 
 class BotInvitePurpose(StrEnum):

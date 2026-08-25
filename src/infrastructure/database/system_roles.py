@@ -8,6 +8,7 @@ SYSTEM_ROLES = (
     (SystemRoleCode.ATHLETE, "Athlete"),
     (SystemRoleCode.TRAINER, "Trainer"),
     (SystemRoleCode.ADMINISTRATOR, "Administrator"),
+    (SystemRoleCode.OWNER, "Owner"),
 )
 
 

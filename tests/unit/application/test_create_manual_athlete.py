@@ -172,8 +172,16 @@ def manual_command(
     )
 
 
-async def test_administrator_creates_only_unlinked_athlete_and_audit() -> None:
-    interactor, users, athletes, roles, audit, uow = build_interactor()
+@pytest.mark.parametrize(
+    "administrative_role",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_administrative_actor_creates_unlinked_athlete_and_audit(
+    administrative_role: SystemRoleCode,
+) -> None:
+    interactor, users, athletes, roles, audit, uow = build_interactor(
+        role_codes=(administrative_role,)
+    )
 
     result = await interactor(
         manual_command(first_name="  Ирина  ", last_name="  Иванова  ")

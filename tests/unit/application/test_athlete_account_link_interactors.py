@@ -256,14 +256,18 @@ def link_invite(**overrides: object) -> BotInvite:
     return BotInvite(**values)  # type: ignore[arg-type]
 
 
-async def test_administrator_lists_only_unlinked_athletes() -> None:
+@pytest.mark.parametrize(
+    "administrative_role",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_administrative_actor_lists_only_unlinked_athletes(
+    administrative_role: SystemRoleCode,
+) -> None:
     users = FakeUserRepository((user(),))
     athletes = FakeAthleteRepository(
         (athlete(), athlete(athlete_id=202, user_id=999))
     )
-    roles = FakeRoleRepository(
-        active_codes=(SystemRoleCode.ADMINISTRATOR,)
-    )
+    roles = FakeRoleRepository(active_codes=(administrative_role,))
     interactor = ListUnlinkedAthletesInteractor(users, athletes, roles)
 
     result = await interactor(ListUnlinkedAthletesQuery(actor_telegram_id=123))
@@ -291,12 +295,16 @@ async def test_non_administrator_cannot_list_unlinked_athletes(
         await interactor(ListUnlinkedAthletesQuery(actor_telegram_id=123))
 
 
-async def test_administrator_creates_hashed_personal_invite_and_audit() -> None:
+@pytest.mark.parametrize(
+    "administrative_role",
+    [SystemRoleCode.ADMINISTRATOR, SystemRoleCode.OWNER],
+)
+async def test_administrative_actor_creates_hashed_invite_and_audit(
+    administrative_role: SystemRoleCode,
+) -> None:
     users = FakeUserRepository((user(),))
     athletes = FakeAthleteRepository((athlete(),))
-    roles = FakeRoleRepository(
-        active_codes=(SystemRoleCode.ADMINISTRATOR,)
-    )
+    roles = FakeRoleRepository(active_codes=(administrative_role,))
     invites = FakeBotInviteRepository()
     audit = FakeAuditLogRepository()
     uow = FakeUnitOfWork()

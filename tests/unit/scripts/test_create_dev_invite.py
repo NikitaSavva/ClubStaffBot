@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from entrypoints.create_dev_invite import build_deep_link, generate_qr_code
+from scripts.create_dev_invite import build_deep_link, generate_qr_code
 
 
 def test_build_deep_link_normalizes_username_and_encodes_token() -> None:

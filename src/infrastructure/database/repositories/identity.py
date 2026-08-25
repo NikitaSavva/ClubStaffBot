@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -121,13 +122,27 @@ class SqlAlchemyRoleRepository:
         model = await self._session.scalar(
             select(RoleModel).where(RoleModel.code == code.value)
         )
-        if model is None:
-            return None
-        return Role(
-            id=model.id,
-            code=SystemRoleCode(model.code),
-            is_system=model.is_system,
-            is_active=model.is_active,
+        return _to_role(model)
+
+    async def get_by_code_for_update(
+        self,
+        code: SystemRoleCode,
+    ) -> Role | None:
+        model = await self._session.scalar(
+            select(RoleModel)
+            .where(RoleModel.code == code.value)
+            .with_for_update()
+        )
+        return _to_role(model)
+
+    async def get_assigned_user_id(self, role_id: int) -> int | None:
+        return cast(
+            int | None,
+            await self._session.scalar(
+                select(UserRoleModel.user_id).where(
+                    UserRoleModel.role_id == role_id
+                )
+            ),
         )
 
     async def list_active_codes_for_user(
@@ -309,6 +324,17 @@ def _to_required_athlete(model: AthleteModel) -> Athlete:
         last_name=model.last_name,
         birth_date=model.birth_date,
         phone=model.phone,
+        is_active=model.is_active,
+    )
+
+
+def _to_role(model: RoleModel | None) -> Role | None:
+    if model is None:
+        return None
+    return Role(
+        id=model.id,
+        code=SystemRoleCode(model.code),
+        is_system=model.is_system,
         is_active=model.is_active,
     )
 

@@ -17,6 +17,7 @@ from presentation.telegram.screen import BannerContext, TelegramScreen
 
 
 class RolePanel(StrEnum):
+    OWNER = "owner"
     ADMINISTRATOR = "administrator"
     TRAINER = "trainer"
     ATHLETE = "athlete"
@@ -36,6 +37,16 @@ class _RolePresentation:
 
 
 _ROLE_PRESENTATIONS = (
+    _RolePresentation(
+        role=RolePanel.OWNER,
+        home_action_id="owner.home",
+        selector_title="Владелец",
+        panel_caption=(
+            "Управляйте спортсменами, Telegram-аккаунтами и ролями "
+            "пользователей."
+        ),
+        banner=BannerContext.ADMIN_PANEL,
+    ),
     _RolePresentation(
         role=RolePanel.ADMINISTRATOR,
         home_action_id="administrator.home",
@@ -98,13 +109,18 @@ def build_role_panel_screen(
     notice: str | None = None,
 ) -> TelegramScreen:
     presentation = _presentation_for(role)
+    action_prefixes = (
+        ("owner.", "administrator.")
+        if role is RolePanel.OWNER
+        else (f"{role.value}.",)
+    )
     items = {
         item.action_id: item
         for item in context.items
-        if item.action_id.startswith(f"{role.value}.")
+        if item.action_id.startswith(action_prefixes)
     }
     rows: list[tuple[InlineKeyboardButton, ...]] = []
-    if role is RolePanel.ADMINISTRATOR:
+    if role in (RolePanel.OWNER, RolePanel.ADMINISTRATOR):
         primary = items.get("administrator.create_athlete")
         if primary is not None:
             rows.append((_menu_item_button(primary),))

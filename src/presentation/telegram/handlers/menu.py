@@ -42,6 +42,23 @@ USER_NOT_REGISTERED_TEXT = (
 MENU_UNAVAILABLE_TEXT = "Для вашей учетной записи пока нет доступного меню."
 
 
+async def set_administrative_navigation_context(state: FSMContext) -> None:
+    navigation = await get_navigation_context(state)
+    active_role = (
+        RolePanel.OWNER.value
+        if navigation is not None
+        and navigation.active_role == RolePanel.OWNER.value
+        else RolePanel.ADMINISTRATOR.value
+    )
+    await set_navigation_context(
+        state,
+        NavigationContext(
+            root_screen=RootScreen.ROLE_PANEL,
+            active_role=active_role,
+        ),
+    )
+
+
 @inject
 async def handle_menu(
     message: Message,

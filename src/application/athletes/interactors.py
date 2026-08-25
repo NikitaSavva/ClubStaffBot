@@ -1,17 +1,14 @@
 from application.athletes.commands import CreateManualAthleteCommand
 from application.athletes.dto import CreateManualAthleteResult
 from application.common import UnitOfWork
-from application.identity.errors import (
-    AdministratorPermissionRequiredError,
-    UserNotFoundError,
-)
+from application.identity.authorization import require_administrative_actor
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
     RoleRepository,
     UserRepository,
 )
-from domain.identity import Athlete, SystemRoleCode
+from domain.identity import Athlete
 
 ATHLETE_CREATED_MANUALLY_ACTION = "ATHLETE_CREATED_MANUALLY"
 ATHLETE_ENTITY_TYPE = "ATHLETE"
@@ -37,15 +34,11 @@ class CreateManualAthleteInteractor:
         command: CreateManualAthleteCommand,
     ) -> CreateManualAthleteResult:
         async with self._uow:
-            actor = await self._users.get_by_telegram_id(
-                command.actor_telegram_id
+            actor = await require_administrative_actor(
+                telegram_id=command.actor_telegram_id,
+                users=self._users,
+                roles=self._roles,
             )
-            if actor is None or actor.id is None:
-                raise UserNotFoundError
-
-            role_codes = await self._roles.list_active_codes_for_user(actor.id)
-            if SystemRoleCode.ADMINISTRATOR not in role_codes:
-                raise AdministratorPermissionRequiredError
 
             athlete = Athlete.create_manually(
                 first_name=command.first_name,

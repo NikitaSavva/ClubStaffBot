@@ -8,10 +8,10 @@ from sqlalchemy import select
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from domain.identity import BotInvitePurpose
-from entrypoints import create_dev_invite
 from infrastructure.database.models import BotInviteModel
 from infrastructure.database.session import create_engine, create_session_factory
 from infrastructure.security import Sha256InviteTokenHasher
+from scripts import create_dev_invite
 
 
 async def test_create_invite_qr_persists_only_hash_and_writes_correct_link(
