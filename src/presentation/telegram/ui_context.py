@@ -10,6 +10,7 @@ UI_CONTEXT_KEY = "ui_context"
 
 _ACTIVE_MESSAGE_KEY = "active_message"
 _NAVIGATION_KEY = "navigation"
+_ROLE_REPLY_KEYBOARD_FINGERPRINT_KEY = "role_reply_keyboard_fingerprint"
 
 
 class UiMessageKind(StrEnum):
@@ -124,6 +125,26 @@ async def set_navigation_context(
     data = await state.get_data()
     ui_context = _as_dict(data.get(UI_CONTEXT_KEY))
     ui_context[_NAVIGATION_KEY] = asdict(navigation)
+    data[UI_CONTEXT_KEY] = ui_context
+    await state.set_data(data)
+
+
+async def get_role_reply_keyboard_fingerprint(
+    state: FSMContext,
+) -> str | None:
+    ui_context = await _get_ui_context(state)
+    return _optional_str(
+        ui_context.get(_ROLE_REPLY_KEYBOARD_FINGERPRINT_KEY)
+    )
+
+
+async def set_role_reply_keyboard_fingerprint(
+    state: FSMContext,
+    fingerprint: str,
+) -> None:
+    data = await state.get_data()
+    ui_context = _as_dict(data.get(UI_CONTEXT_KEY))
+    ui_context[_ROLE_REPLY_KEYBOARD_FINGERPRINT_KEY] = fingerprint
     data[UI_CONTEXT_KEY] = ui_context
     await state.set_data(data)
 

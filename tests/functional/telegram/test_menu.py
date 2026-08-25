@@ -7,11 +7,20 @@ from aiogram import Bot
 from aiogram.enums import ChatType
 from aiogram.methods import (
     AnswerCallbackQuery,
-    EditMessageMedia,
+    DeleteMessage,
+    EditMessageReplyMarkup,
     SendPhoto,
     TelegramMethod,
 )
-from aiogram.types import CallbackQuery, Chat, Message, Update, User
+from aiogram.types import (
+    CallbackQuery,
+    Chat,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+    User,
+)
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,12 +31,7 @@ from bootstrap.startup import bootstrap_system_roles
 from domain.identity import SystemRoleCode
 from entrypoints.bot import create_dispatcher
 from infrastructure.database.models import RoleModel, UserModel, UserRoleModel
-from presentation.telegram.navigation import (
-    BACK_BUTTON_TEXT,
-    NavigationAction,
-    NavigationCallback,
-    NavigationTarget,
-)
+from presentation.telegram.keyboards.role import ROLE_SWITCH_LABEL
 from presentation.telegram.presenters import RolePanel, RolePanelCallback
 from tests.functional.telegram.fakes import telegram_method_result
 
@@ -123,18 +127,20 @@ async def add_user_with_roles(
 
 
 @pytest.mark.parametrize(
-    ("role_code", "expected_caption", "expected_banner", "expected_rows"),
+    (
+        "role_code",
+        "expected_caption",
+        "expected_banner",
+        "expected_reply_rows",
+    ),
     [
         (
             SystemRoleCode.ADMINISTRATOR,
             "Панель администратора",
             "admin-banner-file-id",
             [
-                [("Добавить спортсмена", "administrator.create_athlete")],
-                [
-                    ("Пользователи", "administrator.manage_users"),
-                    ("Связать аккаунт", "administrator.link_athlete_account"),
-                ],
+                ["Добавить спортсмена"],
+                ["Пользователи", "Связать аккаунт"],
             ],
         ),
         (
@@ -157,7 +163,7 @@ async def test_start_opens_single_role_panel_without_back(
     role_code: SystemRoleCode,
     expected_caption: str,
     expected_banner: str,
-    expected_rows: list[list[tuple[str, str]]],
+    expected_reply_rows: list[list[str]],
 ) -> None:
     container = create_container(integration_settings)
     methods: list[TelegramMethod[Any]] = []
@@ -195,19 +201,19 @@ async def test_start_opens_single_role_panel_without_back(
     assert method.photo == expected_banner
     assert method.caption == expected_caption
     assert method.reply_markup is not None
-    actual_rows = [
-        [(button.text, button.callback_data) for button in row]
-        for row in method.reply_markup.inline_keyboard
-    ]
-    assert actual_rows == expected_rows
-    assert all(
-        button.text != BACK_BUTTON_TEXT
-        for row in method.reply_markup.inline_keyboard
-        for button in row
-    )
+    if expected_reply_rows:
+        assert isinstance(method.reply_markup, ReplyKeyboardMarkup)
+        assert method.reply_markup.resize_keyboard is True
+        assert method.reply_markup.is_persistent is True
+        assert [
+            [button.text for button in row]
+            for row in method.reply_markup.keyboard
+        ] == expected_reply_rows
+    else:
+        assert isinstance(method.reply_markup, ReplyKeyboardRemove)
 
 
-async def test_multi_role_user_returns_from_panel_to_role_selector(
+async def test_multi_role_user_switches_role_without_stale_reply_actions(
     integration_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,10 +232,7 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 7_000_000 + uuid4().int % 1_000_000_000
     select_admin = RolePanelCallback(role=RolePanel.ADMINISTRATOR).pack()
-    back_to_selector = NavigationCallback(
-        action=NavigationAction.BACK,
-        target=NavigationTarget.ROLE_SELECTOR,
-    ).pack()
+    select_athlete = RolePanelCallback(role=RolePanel.ATHLETE).pack()
     try:
         await bootstrap_system_roles(container)
         await add_user_with_roles(
@@ -254,33 +257,65 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
         )
         await dispatcher.feed_update(
             bot,
-            callback_update(
+            command_update(
                 update_id=3,
                 telegram_id=telegram_id,
-                data=back_to_selector,
+                text=ROLE_SWITCH_LABEL,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                telegram_id=telegram_id,
+                data=select_athlete,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=5,
+                telegram_id=telegram_id,
+                text="Пользователи",
             ),
         )
     finally:
         await container.close()
 
     sends = [method for method in methods if isinstance(method, SendPhoto)]
-    edits = [method for method in methods if isinstance(method, EditMessageMedia)]
+    edits = [
+        method
+        for method in methods
+        if isinstance(method, EditMessageReplyMarkup)
+    ]
     answers = [
         method for method in methods if isinstance(method, AnswerCallbackQuery)
     ]
-    assert len(sends) == 1
+    deletes = [
+        method for method in methods if isinstance(method, DeleteMessage)
+    ]
+    assert len(sends) == 4
     assert sends[0].photo == "role-selector-banner-file-id"
-    assert len(edits) == 2
-    assert edits[0].message_id == 1
-    assert edits[0].media.media == "admin-banner-file-id"
-    assert edits[0].reply_markup is not None
-    assert any(
-        button.callback_data == back_to_selector
-        for row in edits[0].reply_markup.inline_keyboard
-        for button in row
-    )
-    assert edits[1].message_id == 1
-    assert edits[1].media.media == "role-selector-banner-file-id"
+    assert isinstance(sends[0].reply_markup, ReplyKeyboardRemove)
+    assert sends[1].photo == "admin-banner-file-id"
+    assert isinstance(sends[1].reply_markup, ReplyKeyboardMarkup)
+    assert [
+        [button.text for button in row]
+        for row in sends[1].reply_markup.keyboard
+    ] == [
+        ["Добавить спортсмена"],
+        ["Пользователи", "Связать аккаунт"],
+        [ROLE_SWITCH_LABEL],
+    ]
+    assert sends[2].photo == "role-selector-banner-file-id"
+    assert isinstance(sends[2].reply_markup, ReplyKeyboardRemove)
+    assert sends[3].photo == "athlete-banner-file-id"
+    assert isinstance(sends[3].reply_markup, ReplyKeyboardMarkup)
+    assert [
+        [button.text for button in row]
+        for row in sends[3].reply_markup.keyboard
+    ] == [[ROLE_SWITCH_LABEL]]
+    assert len(edits) == 4
     assert len(answers) == 2
-    assert methods.index(answers[0]) < methods.index(edits[0])
-    assert methods.index(answers[1]) < methods.index(edits[1])
+    assert len(deletes) == 1
+    assert deletes[0].message_id == 3

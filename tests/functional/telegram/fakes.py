@@ -3,7 +3,7 @@ from typing import Any
 
 from aiogram.enums import ChatType
 from aiogram.methods import GetMe, SendMessage, SendPhoto, TelegramMethod
-from aiogram.types import Chat, Message, User
+from aiogram.types import Chat, InlineKeyboardMarkup, Message, User
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 DEFAULT_BOT_USER = User(
@@ -29,7 +29,11 @@ def telegram_method_result(
             chat=Chat(id=int(method.chat_id), type=ChatType.PRIVATE),
             from_user=bot_user,
             text=method.text,
-            reply_markup=method.reply_markup,
+            reply_markup=(
+                method.reply_markup
+                if isinstance(method.reply_markup, InlineKeyboardMarkup)
+                else None
+            ),
         )
     if isinstance(method, SendPhoto):
         return Message(
@@ -38,6 +42,10 @@ def telegram_method_result(
             chat=Chat(id=int(method.chat_id), type=ChatType.PRIVATE),
             from_user=bot_user,
             caption=method.caption,
-            reply_markup=method.reply_markup,
+            reply_markup=(
+                method.reply_markup
+                if isinstance(method.reply_markup, InlineKeyboardMarkup)
+                else None
+            ),
         )
     return True

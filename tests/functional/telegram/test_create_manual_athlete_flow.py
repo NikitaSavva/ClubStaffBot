@@ -5,9 +5,11 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
+    DeleteMessage,
     EditMessageCaption,
     EditMessageReplyMarkup,
     SendPhoto,
@@ -18,6 +20,7 @@ from aiogram.types import (
     Chat,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardMarkup,
     Update,
     User,
 )
@@ -36,6 +39,9 @@ from infrastructure.database.models import (
     UserModel,
     UserRoleModel,
 )
+from presentation.telegram.handlers.account_link import (
+    SELECT_ATHLETE_TEXT,
+)
 from presentation.telegram.handlers.athlete_creation import (
     CONFIRM_CREATE_ATHLETE_ACTION,
     CONFIRM_CREATE_ATHLETE_TEXT,
@@ -46,13 +52,17 @@ from presentation.telegram.handlers.athlete_creation import (
     ENTER_FIRST_NAME_TEXT,
     INVALID_FIRST_NAME_TEXT,
 )
+from presentation.telegram.handlers.role_management import ENTER_USER_QUERY_TEXT
 from presentation.telegram.navigation import (
     CANCEL_BUTTON_TEXT,
     NavigationAction,
     NavigationCallback,
     NavigationTarget,
 )
-from presentation.telegram.states import CreateAthleteStates
+from presentation.telegram.states import (
+    CreateAthleteStates,
+    RoleManagementStates,
+)
 from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
@@ -228,33 +238,30 @@ async def test_administrator_creates_athlete_through_menu_flow(
             method
             for method in sent_methods
             if isinstance(method, SendPhoto)
-            and isinstance(method.reply_markup, InlineKeyboardMarkup)
+            and isinstance(method.reply_markup, ReplyKeyboardMarkup)
         )
         create_button = next(
             button
-            for row in menu_method.reply_markup.inline_keyboard
+            for row in menu_method.reply_markup.keyboard
             for button in row
-            if button.callback_data == CREATE_ATHLETE_ACTION
+            if button.text == "Добавить спортсмена"
         )
         assert create_button.text == "Добавить спортсмена"
 
-        menu_message_id = sent_message_id(sent_methods, menu_method)
         begin_offset = len(sent_methods)
         await dispatcher.feed_update(
             bot,
-            callback_update(update_id=2, sender=sender),
+            message_update(
+                update_id=2,
+                sender=sender,
+                text="Добавить спортсмена",
+            ),
         )
         begin_methods = sent_methods[begin_offset:]
-        begin_answers = [
+        navigation_cleanup = next(
             method
             for method in begin_methods
-            if isinstance(method, AnswerCallbackQuery)
-        ]
-        assert len(begin_answers) == 1
-        old_keyboard_cleanup = next(
-            method
-            for method in begin_methods
-            if isinstance(method, EditMessageReplyMarkup)
+            if isinstance(method, DeleteMessage)
         )
         prompt_method = next(
             method
@@ -262,12 +269,10 @@ async def test_administrator_creates_athlete_through_menu_flow(
             if isinstance(method, SendPhoto)
         )
         prompt_message_id = sent_message_id(sent_methods, prompt_method)
-        assert begin_methods.index(begin_answers[0]) < begin_methods.index(
-            old_keyboard_cleanup
+        assert begin_methods.index(navigation_cleanup) < begin_methods.index(
+            prompt_method
         )
-        assert old_keyboard_cleanup.message_id == menu_message_id
-        assert old_keyboard_cleanup.reply_markup is None
-        assert prompt_message_id != menu_message_id
+        assert navigation_cleanup.message_id == 2
         assert prompt_method.photo == "admin-banner-file-id"
         assert prompt_method.caption == ENTER_FIRST_NAME_TEXT
         assert ENTER_FIRST_NAME_TEXT in screen_texts(sent_methods)
@@ -399,6 +404,166 @@ async def test_administrator_creates_athlete_through_menu_flow(
         await container.close()
 
 
+async def test_role_reply_action_precedes_create_athlete_text_input(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    sent_methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        sent_methods.append(method)
+        return telegram_method_result(method, message_id=len(sent_methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 16_500_000 + uuid4().int % 1_000_000_000
+    sender = telegram_user(telegram_id)
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        await add_user_with_role(
+            session_factory,
+            telegram_id=telegram_id,
+            role_code=SystemRoleCode.ADMINISTRATOR,
+        )
+        async with session_factory() as session:
+            athlete_count_before = await session.scalar(
+                select(func.count()).select_from(AthleteModel)
+            )
+
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            message_update(update_id=1, sender=sender, text="/start"),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=2,
+                sender=sender,
+                text="Добавить спортсмена",
+            ),
+        )
+
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=sender.id,
+            user_id=sender.id,
+        )
+        assert (
+            await dispatcher.storage.get_state(storage_key)
+            == CreateAthleteStates.waiting_for_first_name.state
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=3,
+                sender=sender,
+                text="Пользователи",
+            ),
+        )
+
+        assert (
+            await dispatcher.storage.get_state(storage_key)
+            == RoleManagementStates.waiting_for_query.state
+        )
+        state_data = await dispatcher.storage.get_data(storage_key)
+        assert state_data.get("flow_context") == {}
+        assert ENTER_USER_QUERY_TEXT in screen_texts(sent_methods)
+        deleted_message_ids = [
+            method.message_id
+            for method in sent_methods
+            if isinstance(method, DeleteMessage)
+        ]
+        assert deleted_message_ids == [2, 3]
+        async with session_factory() as session:
+            athlete_count_after = await session.scalar(
+                select(func.count()).select_from(AthleteModel)
+            )
+        assert athlete_count_after == athlete_count_before
+    finally:
+        await container.close()
+
+
+async def test_role_reply_navigation_continues_when_message_delete_fails(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    sent_methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        sent_methods.append(method)
+        if isinstance(method, DeleteMessage):
+            raise TelegramBadRequest(
+                method=method,
+                message="message can't be deleted",
+            )
+        return telegram_method_result(method, message_id=len(sent_methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 16_700_000 + uuid4().int % 1_000_000_000
+    sender = telegram_user(telegram_id)
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        await add_user_with_role(
+            session_factory,
+            telegram_id=telegram_id,
+            role_code=SystemRoleCode.ADMINISTRATOR,
+        )
+
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            message_update(update_id=1, sender=sender, text="/start"),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=2,
+                sender=sender,
+                text="Связать аккаунт",
+            ),
+        )
+    finally:
+        await container.close()
+
+    assert len(
+        [method for method in sent_methods if isinstance(method, SendPhoto)]
+    ) == 1
+    delete = next(
+        method
+        for method in sent_methods
+        if isinstance(method, DeleteMessage)
+    )
+    target_edit = next(
+        method
+        for method in sent_methods
+        if isinstance(method, EditMessageCaption)
+    )
+    assert delete.message_id == 2
+    assert target_edit.caption == SELECT_ATHLETE_TEXT
+    assert sent_methods.index(delete) < sent_methods.index(target_edit)
+
+
 async def test_cancelled_form_does_not_create_athlete_or_audit(
     integration_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
@@ -438,7 +603,15 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
         dispatcher = create_dispatcher(container)
         await dispatcher.feed_update(
             bot,
-            callback_update(update_id=1, sender=sender),
+            message_update(update_id=1, sender=sender, text="/start"),
+        )
+        await dispatcher.feed_update(
+            bot,
+            message_update(
+                update_id=2,
+                sender=sender,
+                text="Добавить спортсмена",
+            ),
         )
         form_message = next(
             method
@@ -461,7 +634,7 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
 
         await dispatcher.feed_update(
             bot,
-            message_update(update_id=2, sender=sender, text=first_name),
+            message_update(update_id=3, sender=sender, text=first_name),
         )
         confirmation_message = next(
             method
@@ -484,7 +657,7 @@ async def test_cancelled_form_does_not_create_athlete_or_audit(
         await dispatcher.feed_update(
             bot,
             callback_update(
-                update_id=3,
+                update_id=4,
                 sender=sender,
                 data=cancel_callback,
             ),

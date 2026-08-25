@@ -8,7 +8,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import EditMessageText
-from aiogram.types import Chat, Message
+from aiogram.types import (
+    Chat,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
@@ -24,6 +30,7 @@ from presentation.telegram.screen import (
 from presentation.telegram.ui_context import (
     UiMessageKind,
     get_active_ui_message,
+    get_role_reply_keyboard_fingerprint,
 )
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
@@ -299,3 +306,115 @@ async def test_keyboard_only_change_uses_reply_markup_edit() -> None:
 
     bot.edit_message_reply_markup.assert_awaited_once()
     bot.edit_message_text.assert_not_awaited()
+
+
+async def test_role_reply_keyboard_is_installed_with_target_screen() -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    bot.send_photo.return_value = bot_message(70)
+    role_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Пользователи")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Admin panel",
+            role_reply_markup=role_keyboard,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+    )
+
+    bot.send_photo.assert_awaited_once_with(
+        chat_id=CHAT_ID,
+        photo="admin-file-id",
+        caption="Admin panel",
+        reply_markup=role_keyboard,
+    )
+    bot.edit_message_reply_markup.assert_not_awaited()
+    assert active.message_id == 70
+    assert await get_role_reply_keyboard_fingerprint(state) is not None
+
+
+async def test_same_role_keyboard_keeps_edit_rendering_for_nested_screen(
+) -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    bot.send_photo.return_value = bot_message(80)
+    role_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Пользователи")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+    inline_keyboard = build_inline_keyboard(
+        (build_callback_button(text="Назначить роль", callback_data="assign"),)
+    )
+
+    await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Admin panel",
+            role_reply_markup=role_keyboard,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+    )
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="User profile",
+            reply_markup=inline_keyboard,
+            role_reply_markup=role_keyboard,
+            banner=BannerContext.ADMIN_PANEL,
+        ),
+    )
+
+    assert bot.send_photo.await_count == 1
+    bot.edit_message_caption.assert_awaited_once_with(
+        chat_id=CHAT_ID,
+        message_id=80,
+        caption="User profile",
+        reply_markup=inline_keyboard,
+    )
+    assert active.message_id == 80
+
+
+async def test_reply_keyboard_remove_then_inline_uses_one_target_message(
+) -> None:
+    renderer, bot = make_renderer()
+    state = make_state()
+    bot.send_photo.return_value = bot_message(90)
+    inline_keyboard = build_inline_keyboard(
+        (build_callback_button(text="Администратор", callback_data="admin"),)
+    )
+    remove_keyboard = ReplyKeyboardRemove()
+
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Выберите раздел:",
+            reply_markup=inline_keyboard,
+            role_reply_markup=remove_keyboard,
+            banner=BannerContext.ROLE_SELECTOR,
+        ),
+    )
+
+    bot.send_photo.assert_awaited_once_with(
+        chat_id=CHAT_ID,
+        photo="selector-file-id",
+        caption="Выберите раздел:",
+        reply_markup=remove_keyboard,
+    )
+    bot.edit_message_reply_markup.assert_awaited_once_with(
+        chat_id=CHAT_ID,
+        message_id=90,
+        reply_markup=inline_keyboard,
+    )
+    assert bot.send_photo.await_count == 1
+    assert active.message_id == 90
+    assert active.keyboard_fingerprint != ""

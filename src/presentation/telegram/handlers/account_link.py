@@ -86,10 +86,29 @@ async def handle_list_unlinked_athletes(
     if not isinstance(message, Message):
         return
 
+    await show_unlinked_athletes(
+        chat_id=message.chat.id,
+        actor_telegram_id=callback.from_user.id,
+        state=state,
+        interactor=interactor,
+        renderer=renderer,
+        editable_message=message,
+    )
+
+
+async def show_unlinked_athletes(
+    *,
+    chat_id: int,
+    actor_telegram_id: int,
+    state: FSMContext,
+    interactor: ListUnlinkedAthletesInteractor,
+    renderer: TelegramScreenRenderer,
+    editable_message: Message | None = None,
+) -> None:
     try:
         athletes = await interactor(
             ListUnlinkedAthletesQuery(
-                actor_telegram_id=callback.from_user.id,
+                actor_telegram_id=actor_telegram_id,
             )
         )
     except (AdministratorPermissionRequiredError, UserNotFoundError):
@@ -97,12 +116,12 @@ async def handle_list_unlinked_athletes(
         await set_flow_context(state, {})
         await renderer.render(
             state=state,
-            chat_id=message.chat.id,
+            chat_id=chat_id,
             screen=_admin_screen(
                 LINK_PERMISSION_DENIED_TEXT,
                 build_inline_keyboard((build_menu_button(),)),
             ),
-            editable_message=message,
+            editable_message=editable_message,
         )
         return
 
@@ -122,9 +141,9 @@ async def handle_list_unlinked_athletes(
         )
     await renderer.render(
         state=state,
-        chat_id=message.chat.id,
+        chat_id=chat_id,
         screen=screen,
-        editable_message=message,
+        editable_message=editable_message,
     )
 
 

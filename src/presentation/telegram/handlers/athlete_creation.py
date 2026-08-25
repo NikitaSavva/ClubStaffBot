@@ -92,18 +92,33 @@ async def handle_begin_create_athlete(
     if not isinstance(message, Message):
         return
 
+    await begin_create_athlete_flow(
+        chat_id=message.chat.id,
+        state=state,
+        renderer=renderer,
+        editable_message=message,
+    )
+
+
+async def begin_create_athlete_flow(
+    *,
+    chat_id: int,
+    state: FSMContext,
+    renderer: TelegramScreenRenderer,
+    editable_message: Message | None = None,
+) -> None:
     await _set_admin_navigation(state)
     await set_flow_context(state, {})
     await state.set_state(CreateAthleteStates.waiting_for_first_name)
     await renderer.render(
         state=state,
-        chat_id=message.chat.id,
+        chat_id=chat_id,
         screen=_admin_screen(
             ENTER_FIRST_NAME_TEXT,
             build_inline_keyboard((build_cancel_button(),)),
         ),
         mode=RenderMode.NEW,
-        editable_message=message,
+        editable_message=editable_message,
     )
 
 
