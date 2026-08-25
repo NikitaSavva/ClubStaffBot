@@ -33,6 +33,9 @@ from presentation.telegram.navigation import (
     build_menu_button,
 )
 from presentation.telegram.presenters import RolePanel
+from presentation.telegram.presenters.athletes import (
+    format_athlete_account_link_label,
+)
 from presentation.telegram.qr import build_bot_start_deep_link, generate_qr_png
 from presentation.telegram.screen import (
     BannerContext,
@@ -62,7 +65,7 @@ def build_athlete_selection_keyboard(
     athlete_rows = tuple(
         (
             build_callback_button(
-                text=athlete.full_name,
+                text=format_athlete_account_link_label(athlete),
                 callback_data=f"{SELECT_ATHLETE_PREFIX}{athlete.athlete_id}",
             ),
         )

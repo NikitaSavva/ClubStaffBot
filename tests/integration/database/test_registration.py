@@ -167,6 +167,7 @@ async def test_development_invite_registers_user_in_one_transaction(
         assert athlete.athlete_public_id.version == 4
         assert athlete.first_name == "Integration"
         assert athlete.last_name is None
+        assert athlete.birth_date is None
         assert athlete.phone is None
         assert athlete.is_active
 

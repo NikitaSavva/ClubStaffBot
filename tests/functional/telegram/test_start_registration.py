@@ -150,6 +150,7 @@ async def test_synthetic_start_registration_flow(
             assert athlete.athlete_public_id.version == 4
             assert athlete.first_name == "Functional"
             assert athlete.last_name == "User"
+            assert athlete.birth_date is None
             assert athlete.phone is None
             assert athlete.is_active
             assert invalid_user is None

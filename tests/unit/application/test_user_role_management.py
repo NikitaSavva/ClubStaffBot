@@ -9,12 +9,16 @@ from application.identity import (
     AssignUserRoleInteractor,
     AssignUserRoleResult,
     BotUserSummary,
+    RemoveUserRoleCommand,
+    RemoveUserRoleInteractor,
+    RemoveUserRoleResult,
     SearchBotUsersInteractor,
     SearchBotUsersQuery,
     SearchBotUsersResult,
 )
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
+    LastUserRoleRemovalForbiddenError,
     RequiredSystemRoleMissingError,
     UserNotFoundError,
 )
@@ -61,12 +65,17 @@ class FakeUserRepository:
         }
         self.by_telegram_id = {user.telegram_id: user for user in users}
         self.requested_user_ids: list[int] = []
+        self.locked_user_ids: list[int] = []
 
     async def get_by_telegram_id(self, telegram_id: int) -> User | None:
         return self.by_telegram_id.get(telegram_id)
 
     async def get_by_id(self, user_id: int) -> User | None:
         self.requested_user_ids.append(user_id)
+        return self.by_id.get(user_id)
+
+    async def get_by_id_for_update(self, user_id: int) -> User | None:
+        self.locked_user_ids.append(user_id)
         return self.by_id.get(user_id)
 
 
@@ -77,11 +86,14 @@ class FakeRoleRepository:
         active_codes: dict[int, tuple[SystemRoleCode, ...]],
         roles: dict[SystemRoleCode, Role] | None = None,
         assign_result: bool = True,
+        remove_result: bool = True,
     ) -> None:
         self.active_codes = active_codes
         self.roles = roles or system_roles()
         self.assign_result = assign_result
+        self.remove_result = remove_result
         self.assignments: list[dict[str, object]] = []
+        self.removals: list[dict[str, int]] = []
 
     async def get_by_code(self, code: SystemRoleCode) -> Role | None:
         return self.roles.get(code)
@@ -126,6 +138,24 @@ class FakeRoleRepository:
                 role.code,
             )
         return self.assign_result
+
+    async def remove_from_user(
+        self,
+        *,
+        user_id: int,
+        role_id: int,
+    ) -> bool:
+        self.removals.append({"user_id": user_id, "role_id": role_id})
+        if self.remove_result:
+            role = next(
+                role for role in self.roles.values() if role.id == role_id
+            )
+            self.active_codes[user_id] = tuple(
+                code
+                for code in self.active_codes.get(user_id, ())
+                if code is not role.code
+            )
+        return self.remove_result
 
 
 class FakeBotUserReader:
@@ -211,13 +241,15 @@ def system_roles() -> dict[SystemRoleCode, Role]:
     }
 
 
-def target_summary() -> BotUserSummary:
+def target_summary(
+    role_codes: tuple[SystemRoleCode, ...] = (SystemRoleCode.ATHLETE,),
+) -> BotUserSummary:
     return BotUserSummary(
         user_id=TARGET_USER_ID,
         first_name="Target",
         last_name="User",
         username="target",
-        role_codes=(SystemRoleCode.ATHLETE,),
+        role_codes=role_codes,
     )
 
 
@@ -496,6 +528,199 @@ async def test_audit_failure_prevents_commit() -> None:
         await interactor(assign_trainer_command())
 
     assert len(roles.assignments) == 1
+    assert audit.records == []
+    assert uow.commit_count == 0
+    assert uow.exit_exception is RuntimeError
+
+
+def build_remove_interactor(
+    *,
+    actor_role_codes: tuple[SystemRoleCode, ...] = (
+        SystemRoleCode.ADMINISTRATOR,
+    ),
+    target_role_codes: tuple[SystemRoleCode, ...] = (
+        SystemRoleCode.ATHLETE,
+        SystemRoleCode.TRAINER,
+    ),
+    include_target: bool = True,
+    roles_by_code: dict[SystemRoleCode, Role] | None = None,
+    remove_result: bool = True,
+    audit_error: BaseException | None = None,
+) -> tuple[
+    RemoveUserRoleInteractor,
+    FakeUserRepository,
+    FakeRoleRepository,
+    FakeAuditLogRepository,
+    FakeUnitOfWork,
+]:
+    persisted_users = (actor(), target()) if include_target else (actor(),)
+    users = FakeUserRepository(persisted_users)
+    roles = FakeRoleRepository(
+        active_codes={
+            ACTOR_USER_ID: actor_role_codes,
+            TARGET_USER_ID: target_role_codes,
+        },
+        roles=roles_by_code,
+        remove_result=remove_result,
+    )
+    audit = FakeAuditLogRepository(audit_error)
+    uow = FakeUnitOfWork()
+    return (
+        RemoveUserRoleInteractor(
+            user_repository=users,
+            role_repository=roles,
+            audit_log_repository=audit,
+            unit_of_work=uow,
+        ),
+        users,
+        roles,
+        audit,
+        uow,
+    )
+
+
+def remove_trainer_command() -> RemoveUserRoleCommand:
+    return RemoveUserRoleCommand(
+        actor_telegram_id=ACTOR_TELEGRAM_ID,
+        target_user_id=TARGET_USER_ID,
+        role_code=SystemRoleCode.TRAINER,
+    )
+
+
+async def test_administrator_removes_only_selected_role_with_audit() -> None:
+    interactor, users, roles, audit, uow = build_remove_interactor(
+        target_role_codes=tuple(SystemRoleCode)
+    )
+
+    result = await interactor(remove_trainer_command())
+
+    assert result == RemoveUserRoleResult(
+        target_user_id=TARGET_USER_ID,
+        role_code=SystemRoleCode.TRAINER,
+        role_was_removed=True,
+        current_role_codes=(
+            SystemRoleCode.ATHLETE,
+            SystemRoleCode.ADMINISTRATOR,
+        ),
+        target_user=target_summary(
+            (
+                SystemRoleCode.ATHLETE,
+                SystemRoleCode.ADMINISTRATOR,
+            )
+        ),
+    )
+    assert users.locked_user_ids == [TARGET_USER_ID]
+    assert roles.removals == [
+        {
+            "user_id": TARGET_USER_ID,
+            "role_id": system_roles()[SystemRoleCode.TRAINER].id,
+        }
+    ]
+    assert audit.records == [
+        {
+            "actor_user_id": ACTOR_USER_ID,
+            "action": "ROLE_REMOVED",
+            "entity_type": "USER",
+            "entity_id": TARGET_USER_ID,
+            "payload": {"role_code": "TRAINER"},
+        }
+    ]
+    assert uow.enter_count == 1
+    assert uow.commit_count == 1
+    assert uow.exit_exception is None
+
+
+@pytest.mark.parametrize(
+    "role_code",
+    [SystemRoleCode.ATHLETE, SystemRoleCode.TRAINER],
+)
+async def test_non_administrator_cannot_remove_role(
+    role_code: SystemRoleCode,
+) -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        actor_role_codes=(role_code,)
+    )
+
+    with pytest.raises(AdministratorPermissionRequiredError):
+        await interactor(remove_trainer_command())
+
+    assert roles.removals == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_last_active_system_role_cannot_be_removed() -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        target_role_codes=(SystemRoleCode.TRAINER,)
+    )
+
+    with pytest.raises(LastUserRoleRemovalForbiddenError):
+        await interactor(remove_trainer_command())
+
+    assert roles.removals == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_absent_role_is_controlled_idempotent_outcome() -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        target_role_codes=(SystemRoleCode.ATHLETE,)
+    )
+
+    result = await interactor(remove_trainer_command())
+
+    assert result == RemoveUserRoleResult(
+        target_user_id=TARGET_USER_ID,
+        role_code=SystemRoleCode.TRAINER,
+        role_was_removed=False,
+        current_role_codes=(SystemRoleCode.ATHLETE,),
+        target_user=target_summary(),
+    )
+    assert roles.removals == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_remove_role_target_must_exist() -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        include_target=False
+    )
+
+    with pytest.raises(UserNotFoundError):
+        await interactor(remove_trainer_command())
+
+    assert roles.removals == []
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_concurrent_absent_removal_has_no_audit_or_commit() -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        remove_result=False
+    )
+
+    result = await interactor(remove_trainer_command())
+
+    assert not result.role_was_removed
+    assert roles.removals == [
+        {
+            "user_id": TARGET_USER_ID,
+            "role_id": system_roles()[SystemRoleCode.TRAINER].id,
+        }
+    ]
+    assert audit.records == []
+    assert uow.commit_count == 0
+
+
+async def test_remove_role_audit_failure_prevents_commit() -> None:
+    interactor, _, roles, audit, uow = build_remove_interactor(
+        audit_error=RuntimeError("audit persistence failed")
+    )
+
+    with pytest.raises(RuntimeError, match="audit persistence failed"):
+        await interactor(remove_trainer_command())
+
+    assert len(roles.removals) == 1
     assert audit.records == []
     assert uow.commit_count == 0
     assert uow.exit_exception is RuntimeError

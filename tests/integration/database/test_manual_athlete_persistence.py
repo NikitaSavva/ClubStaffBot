@@ -1,6 +1,6 @@
 """PostgreSQL coverage for manual Athlete creation."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
@@ -35,6 +35,7 @@ from infrastructure.database.system_roles import ensure_system_roles
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+BIRTH_DATE = date(1993, 8, 25)
 
 
 class FailingAuditLogRepository:
@@ -111,6 +112,8 @@ async def create_manual_athlete(
     *,
     actor_telegram_id: int,
     first_name: str,
+    last_name: str = "Иванова",
+    birth_date: date = BIRTH_DATE,
     audit_repository: object | None = None,
 ) -> None:
     async with session_factory() as session:
@@ -129,6 +132,8 @@ async def create_manual_athlete(
             CreateManualAthleteCommand(
                 actor_telegram_id=actor_telegram_id,
                 first_name=first_name,
+                last_name=last_name,
+                birth_date=birth_date,
             )
         )
 
@@ -182,7 +187,8 @@ async def test_manual_athlete_is_persisted_unlinked_and_listed(
 
         assert athlete.user_id is None
         assert athlete.athlete_public_id.version == 4
-        assert athlete.last_name is None
+        assert athlete.last_name == "Иванова"
+        assert athlete.birth_date == BIRTH_DATE
         assert athlete.phone is None
         assert athlete.is_active
         assert audit is not None

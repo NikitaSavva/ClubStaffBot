@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from domain.identity import SystemRoleCode
 
@@ -17,11 +17,12 @@ class UnlinkedAthlete:
     athlete_id: int
     first_name: str
     last_name: str | None
+    birth_date: date | None
 
     @property
     def full_name(self) -> str:
         return " ".join(
-            part for part in (self.last_name, self.first_name) if part
+            part for part in (self.first_name, self.last_name) if part
         )
 
 
@@ -79,3 +80,12 @@ class AssignUserRoleResult:
     role_code: SystemRoleCode
     role_was_assigned: bool
     current_role_codes: tuple[SystemRoleCode, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RemoveUserRoleResult:
+    target_user_id: int
+    role_code: SystemRoleCode
+    role_was_removed: bool
+    current_role_codes: tuple[SystemRoleCode, ...]
+    target_user: BotUserSummary

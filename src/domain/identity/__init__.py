@@ -6,11 +6,17 @@ from domain.identity.entities import (
     SystemRoleCode,
     User,
 )
-from domain.identity.errors import AthleteFirstNameRequiredError
+from domain.identity.errors import (
+    AthleteBirthDateRequiredError,
+    AthleteFirstNameRequiredError,
+    AthleteLastNameRequiredError,
+)
 
 __all__ = [
     "Athlete",
+    "AthleteBirthDateRequiredError",
     "AthleteFirstNameRequiredError",
+    "AthleteLastNameRequiredError",
     "BotInvite",
     "BotInvitePurpose",
     "Role",

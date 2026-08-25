@@ -61,6 +61,12 @@ class RegisterBotUserInteractor:
     ) -> RegisterBotUserResult | LinkAthleteAccountResult:
         registration_result: RegisterBotUserResult | None = None
         async with self._uow:
+            existing_user = await self._users.get_by_telegram_id(
+                command.telegram_id
+            )
+            if existing_user is not None:
+                raise UserAlreadyRegisteredError
+
             now = self._clock.now()
             token_hash = self._token_hasher.hash(command.invite_token)
             invite = await self._invites.get_by_token_hash(token_hash)
@@ -68,12 +74,6 @@ class RegisterBotUserInteractor:
                 raise InvalidBotInviteError
 
             if invite.purpose is BotInvitePurpose.REGISTRATION:
-                existing_user = await self._users.get_by_telegram_id(
-                    command.telegram_id
-                )
-                if existing_user is not None:
-                    raise UserAlreadyRegisteredError
-
                 role = await self._roles.get_by_code(SystemRoleCode.ATHLETE)
                 if role is None or not role.is_system or not role.is_active:
                     raise RequiredSystemRoleMissingError

@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -49,6 +50,7 @@ class AthleteModel(TimestampMixin, Base):
     )
     first_name: Mapped[str] = mapped_column(String)
     last_name: Mapped[str | None] = mapped_column(String)
+    birth_date: Mapped[date | None] = mapped_column(Date)
     phone: Mapped[str | None] = mapped_column(String)
     is_active: Mapped[bool] = mapped_column(Boolean)
 

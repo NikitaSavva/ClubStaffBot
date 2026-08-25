@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import TracebackType
 from typing import Self
 from uuid import uuid4
@@ -223,13 +223,19 @@ def user(*, user_id: int = 101, telegram_id: int = 123) -> User:
     )
 
 
-def athlete(*, athlete_id: int = 201, user_id: int | None = None) -> Athlete:
+def athlete(
+    *,
+    athlete_id: int = 201,
+    user_id: int | None = None,
+    birth_date: date | None = date(1993, 8, 25),
+) -> Athlete:
     return Athlete(
         id=athlete_id,
         athlete_public_id=uuid4(),
         user_id=user_id,
         first_name="Иван",
         last_name="Иванов",
+        birth_date=birth_date,
         phone=None,
         is_active=True,
     )
@@ -264,7 +270,8 @@ async def test_administrator_lists_only_unlinked_athletes() -> None:
 
     assert len(result) == 1
     assert result[0].athlete_id == 201
-    assert result[0].full_name == "Иванов Иван"
+    assert result[0].full_name == "Иван Иванов"
+    assert result[0].birth_date == date(1993, 8, 25)
 
 
 @pytest.mark.parametrize(

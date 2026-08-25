@@ -91,6 +91,7 @@ class ListUnlinkedAthletesInteractor:
                 athlete_id=_persisted_athlete_id(athlete.id),
                 first_name=athlete.first_name,
                 last_name=athlete.last_name,
+                birth_date=athlete.birth_date,
             )
             for athlete in athletes
         )

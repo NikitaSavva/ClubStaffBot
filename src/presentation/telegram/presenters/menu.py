@@ -31,7 +31,7 @@ class _RolePresentation:
     role: RolePanel
     home_action_id: str
     selector_title: str
-    panel_title: str
+    panel_caption: str
     banner: BannerContext
 
 
@@ -40,21 +40,24 @@ _ROLE_PRESENTATIONS = (
         role=RolePanel.ADMINISTRATOR,
         home_action_id="administrator.home",
         selector_title="Администратор",
-        panel_title="Панель администратора",
+        panel_caption=(
+            "Добавляйте спортсменов, связывайте их с Telegram и управляйте "
+            "ролями пользователей."
+        ),
         banner=BannerContext.ADMIN_PANEL,
     ),
     _RolePresentation(
         role=RolePanel.TRAINER,
         home_action_id="trainer.home",
         selector_title="Тренер",
-        panel_title="Панель тренера",
+        panel_caption="Для тренера пока нет доступных действий.",
         banner=BannerContext.TRAINER_PANEL,
     ),
     _RolePresentation(
         role=RolePanel.ATHLETE,
         home_action_id="athlete.home",
         selector_title="Спортсмен",
-        panel_title="Панель спортсмена",
+        panel_caption="Для спортсмена пока нет доступных действий.",
         banner=BannerContext.ATHLETE_PANEL,
     ),
 )
@@ -81,7 +84,7 @@ def build_role_selector_screen(context: MenuContext) -> TelegramScreen:
     ]
     rows = tuple(tuple(buttons[index : index + 2]) for index in range(0, len(buttons), 2))
     return TelegramScreen(
-        text="Выберите раздел:",
+        text="Выберите роль, в которой хотите продолжить работу.",
         reply_markup=build_inline_keyboard(*rows),
         banner=BannerContext.ROLE_SELECTOR,
     )
@@ -118,7 +121,7 @@ def build_role_panel_screen(
     if show_role_selector_back:
         rows.append((build_back_button(NavigationTarget.ROLE_SELECTOR),))
 
-    text = presentation.panel_title
+    text = presentation.panel_caption
     if notice:
         text = f"{notice}\n\n{text}"
     return TelegramScreen(

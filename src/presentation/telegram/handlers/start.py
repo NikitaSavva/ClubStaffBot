@@ -17,16 +17,15 @@ from application.identity.errors import (
     RequiredSystemRoleMissingError,
     UserAlreadyRegisteredError,
 )
-from presentation.telegram.handlers.menu import show_home_screen
+from presentation.telegram.handlers.menu import recover_home_screen
 from presentation.telegram.screen import (
     BannerContext,
+    RenderMode,
     TelegramScreen,
     TelegramScreenRenderer,
 )
-from presentation.telegram.ui_context import clear_flow_context
 
 INVALID_INVITE_TEXT = "Ссылка-приглашение недействительна или больше не активна."
-ALREADY_REGISTERED_TEXT = "Вы уже зарегистрированы."
 REGISTRATION_UNAVAILABLE_TEXT = (
     "Сейчас не удалось завершить регистрацию. Обратитесь к администратору."
 )
@@ -47,16 +46,16 @@ async def handle_start(
     telegram_user = message.from_user
     invite_token = command.args
     if telegram_user is None:
-        await clear_flow_context(state)
+        await state.clear()
         await renderer.render(
             state=state,
             chat_id=message.chat.id,
             screen=_status_screen(INVALID_INVITE_TEXT),
+            mode=RenderMode.NEW,
         )
         return
     if not invite_token:
-        await clear_flow_context(state)
-        await show_home_screen(
+        await recover_home_screen(
             chat_id=message.chat.id,
             telegram_id=telegram_user.id,
             state=state,
@@ -78,7 +77,14 @@ async def handle_start(
     except InvalidBotInviteError:
         response_text = INVALID_INVITE_TEXT
     except UserAlreadyRegisteredError:
-        response_text = ALREADY_REGISTERED_TEXT
+        await recover_home_screen(
+            chat_id=message.chat.id,
+            telegram_id=telegram_user.id,
+            state=state,
+            interactor=menu_interactor,
+            renderer=renderer,
+        )
+        return
     except RequiredSystemRoleMissingError:
         response_text = REGISTRATION_UNAVAILABLE_TEXT
     except AthleteAlreadyLinkedError:
@@ -91,8 +97,7 @@ async def handle_start(
             if isinstance(result, LinkAthleteAccountResult)
             else REGISTRATION_SUCCESS_TEXT
         )
-        await clear_flow_context(state)
-        await show_home_screen(
+        await recover_home_screen(
             chat_id=message.chat.id,
             telegram_id=telegram_user.id,
             state=state,
@@ -102,11 +107,12 @@ async def handle_start(
         )
         return
 
-    await clear_flow_context(state)
+    await state.clear()
     await renderer.render(
         state=state,
         chat_id=message.chat.id,
         screen=_status_screen(response_text),
+        mode=RenderMode.NEW,
     )
 
 

@@ -47,7 +47,20 @@ class CreateManualAthleteInteractor:
             if SystemRoleCode.ADMINISTRATOR not in role_codes:
                 raise AdministratorPermissionRequiredError
 
-            athlete = Athlete.create_manually(first_name=command.first_name)
+            athlete = Athlete.create_manually(
+                first_name=command.first_name,
+                last_name=command.last_name,
+                birth_date=command.birth_date,
+            )
+            if athlete.birth_date is None or athlete.last_name is None:
+                raise RuntimeError(
+                    "A manually created Athlete must be complete"
+                )
+            result = CreateManualAthleteResult(
+                first_name=athlete.first_name,
+                last_name=athlete.last_name,
+                birth_date=athlete.birth_date,
+            )
             athlete_id = await self._athletes.add(athlete)
             await self._audit_log.add(
                 actor_user_id=actor.id,
@@ -57,4 +70,4 @@ class CreateManualAthleteInteractor:
             )
             await self._uow.commit()
 
-        return CreateManualAthleteResult(first_name=athlete.first_name)
+        return result

@@ -9,12 +9,15 @@ from application.identity import (
     AssignUserRoleInteractor,
     BotUserSummary,
     GetUserMenuContextInteractor,
+    RemoveUserRoleCommand,
+    RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
     SearchBotUsersQuery,
     SearchBotUsersResult,
 )
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
+    LastUserRoleRemovalForbiddenError,
     RequiredSystemRoleMissingError,
     UserNotFoundError,
 )
@@ -54,6 +57,8 @@ MANAGE_USERS_ACTION = "administrator.manage_users"
 SELECT_USER_PREFIX = "user_roles.select:"
 BEGIN_ASSIGN_ROLE_PREFIX = "user_roles.assign:start:"
 ASSIGN_ROLE_PREFIX = "user_roles.assign_role:"
+BEGIN_REMOVE_ROLE_PREFIX = "user_roles.remove:start:"
+REMOVE_ROLE_PREFIX = "user_roles.remove_role:"
 
 ENTER_USER_QUERY_TEXT = (
     "Введите имя, фамилию или Telegram username пользователя."
@@ -74,10 +79,14 @@ ROLE_CONFIGURATION_UNAVAILABLE_TEXT = (
 )
 USER_ROLE_CONTEXT_TEXT = "Пользователь: {user}\nТекущие роли:\n{roles}"
 SELECT_ROLE_TEXT = "Выберите системную роль для назначения пользователю {user}."
+SELECT_ROLE_TO_REMOVE_TEXT = "Выберите роль, которую нужно снять у {user}."
 ROLE_ASSIGNED_TEXT = "Роль {role} назначена.\nТекущие роли:\n{roles}"
 ROLE_ALREADY_ASSIGNED_TEXT = (
     "Роль {role} уже назначена.\nТекущие роли:\n{roles}"
 )
+ROLE_REMOVED_TEXT = "Роль {role} снята."
+ROLE_ALREADY_ABSENT_TEXT = "Роль {role} уже отсутствует."
+LAST_ROLE_REMOVAL_FORBIDDEN_TEXT = "Нельзя снять последнюю роль пользователя."
 
 
 def build_user_selection_keyboard(
@@ -98,16 +107,25 @@ def build_user_selection_keyboard(
     )
 
 
-def build_begin_assignment_keyboard(
+def build_user_profile_keyboard(
     target_user_id: int,
+    role_codes: tuple[SystemRoleCode, ...],
 ) -> InlineKeyboardMarkup:
-    return build_inline_keyboard(
-        (
+    action_buttons = [
+        build_callback_button(
+            text="Назначить роль",
+            callback_data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target_user_id}",
+        )
+    ]
+    if len(role_codes) > 1:
+        action_buttons.append(
             build_callback_button(
-                text="Назначить роль",
-                callback_data=f"{BEGIN_ASSIGN_ROLE_PREFIX}{target_user_id}",
-            ),
-        ),
+                text="Снять роль",
+                callback_data=f"{BEGIN_REMOVE_ROLE_PREFIX}{target_user_id}",
+            )
+        )
+    return build_inline_keyboard(
+        tuple(action_buttons),
         (build_back_button(NavigationTarget.USERS_LIST),),
         (build_cancel_button(),),
     )
@@ -122,6 +140,35 @@ def build_role_selection_keyboard(
             text=role_code.value,
             callback_data=(
                 f"{ASSIGN_ROLE_PREFIX}{target_user_id}:{role_code.value}"
+            ),
+        )
+        for role_code in role_codes
+    )
+    role_rows = tuple(
+        role_buttons[index : index + 2]
+        for index in range(0, len(role_buttons), 2)
+    )
+    return build_inline_keyboard(
+        *role_rows,
+        (
+            build_back_button(
+                NavigationTarget.USER_PROFILE,
+                target_id=target_user_id,
+            ),
+        ),
+        (build_cancel_button(),),
+    )
+
+
+def build_role_removal_keyboard(
+    target_user_id: int,
+    role_codes: tuple[SystemRoleCode, ...],
+) -> InlineKeyboardMarkup:
+    role_buttons = tuple(
+        build_callback_button(
+            text=role_code.value,
+            callback_data=(
+                f"{REMOVE_ROLE_PREFIX}{target_user_id}:{role_code.value}"
             ),
         )
         for role_code in role_codes
@@ -392,6 +439,64 @@ async def handle_begin_role_assignment(
 
 
 @inject
+async def handle_begin_role_removal(
+    callback: CallbackQuery,
+    state: FSMContext,
+    interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
+) -> None:
+    await callback.answer()
+    message = callback.message
+    if not isinstance(message, Message) or callback.data is None:
+        return
+
+    target_user_id = _parse_target_user_id(
+        callback.data,
+        prefix=BEGIN_REMOVE_ROLE_PREFIX,
+    )
+    if target_user_id is None:
+        await _show_user_unavailable(message, state, renderer)
+        return
+
+    target_context = await _load_target_context(
+        message=message,
+        state=state,
+        actor_telegram_id=callback.from_user.id,
+        expected_target_user_id=target_user_id,
+        interactor=interactor,
+        renderer=renderer,
+    )
+    if target_context is None:
+        return
+    target, _ = target_context
+    if len(target.role_codes) < 2:
+        await _show_user_profile(
+            message,
+            state,
+            target,
+            renderer,
+            editable_message=message,
+            notice=LAST_ROLE_REMOVAL_FORBIDDEN_TEXT,
+        )
+        return
+
+    await state.set_state(
+        RoleManagementStates.waiting_for_role_removal_selection
+    )
+    await _render_admin_screen(
+        message=message,
+        state=state,
+        renderer=renderer,
+        text=SELECT_ROLE_TO_REMOVE_TEXT.format(user=_user_label(target)),
+        reply_markup=build_role_removal_keyboard(
+            target.user_id,
+            target.role_codes,
+        ),
+        editable_message=message,
+    )
+
+
+@inject
 async def handle_back_to_user_profile(
     callback: CallbackQuery,
     state: FSMContext,
@@ -501,6 +606,93 @@ async def handle_assign_user_role(
     )
 
 
+@inject
+async def handle_remove_user_role(
+    callback: CallbackQuery,
+    state: FSMContext,
+    interactor: FromDishka[RemoveUserRoleInteractor],
+    search_interactor: FromDishka[SearchBotUsersInteractor],
+    renderer: FromDishka[TelegramScreenRenderer],
+) -> None:
+    await callback.answer()
+    message = callback.message
+    if not isinstance(message, Message) or callback.data is None:
+        return
+
+    removal = _parse_role_action(callback.data, prefix=REMOVE_ROLE_PREFIX)
+    flow_context = await get_flow_context(state)
+    state_target_user_id = flow_context.get("target_user_id")
+    if (
+        removal is None
+        or not isinstance(state_target_user_id, int)
+        or state_target_user_id != removal[0]
+    ):
+        await _show_user_unavailable(message, state, renderer)
+        return
+    target_user_id, role_code = removal
+
+    try:
+        result = await interactor(
+            RemoveUserRoleCommand(
+                actor_telegram_id=callback.from_user.id,
+                target_user_id=target_user_id,
+                role_code=role_code,
+            )
+        )
+    except AdministratorPermissionRequiredError:
+        await _show_permission_denied(message, state, renderer)
+        return
+    except UserNotFoundError:
+        await _show_user_unavailable(message, state, renderer)
+        return
+    except RequiredSystemRoleMissingError:
+        await clear_flow_context(state)
+        await _render_admin_screen(
+            message=message,
+            state=state,
+            renderer=renderer,
+            text=ROLE_CONFIGURATION_UNAVAILABLE_TEXT,
+            reply_markup=build_inline_keyboard((build_menu_button(),)),
+            editable_message=message,
+        )
+        return
+    except LastUserRoleRemovalForbiddenError:
+        target_context = await _load_target_context(
+            message=message,
+            state=state,
+            actor_telegram_id=callback.from_user.id,
+            expected_target_user_id=target_user_id,
+            interactor=search_interactor,
+            renderer=renderer,
+        )
+        if target_context is None:
+            return
+        target, _ = target_context
+        await _show_user_profile(
+            message,
+            state,
+            target,
+            renderer,
+            editable_message=message,
+            notice=LAST_ROLE_REMOVAL_FORBIDDEN_TEXT,
+        )
+        return
+
+    notice_template = (
+        ROLE_REMOVED_TEXT
+        if result.role_was_removed
+        else ROLE_ALREADY_ABSENT_TEXT
+    )
+    await _show_user_profile(
+        message,
+        state,
+        result.target_user,
+        renderer,
+        editable_message=message,
+        notice=notice_template.format(role=result.role_code.value),
+    )
+
+
 def create_role_management_router() -> Router:
     router = Router(name=__name__)
     router.callback_query.register(
@@ -543,17 +735,30 @@ def create_role_management_router() -> Router:
         RoleManagementStates.viewing_user,
     )
     router.callback_query.register(
+        handle_begin_role_removal,
+        F.data.startswith(BEGIN_REMOVE_ROLE_PREFIX),
+        RoleManagementStates.viewing_user,
+    )
+    router.callback_query.register(
         handle_back_to_user_profile,
         NavigationCallback.filter(
             (F.action == NavigationAction.BACK)
             & (F.target == NavigationTarget.USER_PROFILE)
         ),
-        RoleManagementStates.waiting_for_role_selection,
+        StateFilter(
+            RoleManagementStates.waiting_for_role_selection,
+            RoleManagementStates.waiting_for_role_removal_selection,
+        ),
     )
     router.callback_query.register(
         handle_assign_user_role,
         F.data.startswith(ASSIGN_ROLE_PREFIX),
         RoleManagementStates.waiting_for_role_selection,
+    )
+    router.callback_query.register(
+        handle_remove_user_role,
+        F.data.startswith(REMOVE_ROLE_PREFIX),
+        RoleManagementStates.waiting_for_role_removal_selection,
     )
     return router
 
@@ -679,18 +884,25 @@ async def _show_user_profile(
     renderer: TelegramScreenRenderer,
     *,
     editable_message: Message | None = None,
+    notice: str | None = None,
 ) -> None:
     await update_flow_context(state, target_user_id=target.user_id)
     await state.set_state(RoleManagementStates.viewing_user)
+    profile_text = USER_ROLE_CONTEXT_TEXT.format(
+        user=_user_label(target),
+        roles=_roles_text(target.role_codes),
+    )
+    if notice:
+        profile_text = f"{notice}\n\n{profile_text}"
     await _render_admin_screen(
         message=message,
         state=state,
         renderer=renderer,
-        text=USER_ROLE_CONTEXT_TEXT.format(
-            user=_user_label(target),
-            roles=_roles_text(target.role_codes),
+        text=profile_text,
+        reply_markup=build_user_profile_keyboard(
+            target.user_id,
+            target.role_codes,
         ),
-        reply_markup=build_begin_assignment_keyboard(target.user_id),
         editable_message=editable_message,
     )
 
@@ -787,8 +999,16 @@ def _parse_target_user_id(data: str, *, prefix: str) -> int | None:
 def _parse_role_assignment(
     data: str,
 ) -> tuple[int, SystemRoleCode] | None:
+    return _parse_role_action(data, prefix=ASSIGN_ROLE_PREFIX)
+
+
+def _parse_role_action(
+    data: str,
+    *,
+    prefix: str,
+) -> tuple[int, SystemRoleCode] | None:
     raw_target_user_id, separator, raw_role_code = data.removeprefix(
-        ASSIGN_ROLE_PREFIX
+        prefix
     ).partition(":")
     if not separator:
         return None

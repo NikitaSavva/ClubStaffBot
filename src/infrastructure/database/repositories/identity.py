@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import delete, exists, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,7 @@ class SqlAlchemyAthleteRepository:
             user_id=athlete.user_id,
             first_name=athlete.first_name,
             last_name=athlete.last_name,
+            birth_date=athlete.birth_date,
             phone=athlete.phone,
             is_active=athlete.is_active,
         )
@@ -82,6 +83,14 @@ class SqlAlchemyUserRepository:
 
     async def get_by_id(self, user_id: int) -> User | None:
         model = await self._session.get(UserModel, user_id)
+        return _to_user(model)
+
+    async def get_by_id_for_update(self, user_id: int) -> User | None:
+        model = await self._session.scalar(
+            select(UserModel)
+            .where(UserModel.id == user_id)
+            .with_for_update()
+        )
         return _to_user(model)
 
     async def add(self, user: User) -> int:
@@ -178,6 +187,22 @@ class SqlAlchemyRoleRepository:
             .returning(UserRoleModel.id)
         )
         return assigned_user_role_id is not None
+
+    async def remove_from_user(
+        self,
+        *,
+        user_id: int,
+        role_id: int,
+    ) -> bool:
+        removed_user_role_id = await self._session.scalar(
+            delete(UserRoleModel)
+            .where(
+                UserRoleModel.user_id == user_id,
+                UserRoleModel.role_id == role_id,
+            )
+            .returning(UserRoleModel.id)
+        )
+        return removed_user_role_id is not None
 
 
 class SqlAlchemyBotInviteRepository:
@@ -282,6 +307,7 @@ def _to_required_athlete(model: AthleteModel) -> Athlete:
         user_id=model.user_id,
         first_name=model.first_name,
         last_name=model.last_name,
+        birth_date=model.birth_date,
         phone=model.phone,
         is_active=model.is_active,
     )
