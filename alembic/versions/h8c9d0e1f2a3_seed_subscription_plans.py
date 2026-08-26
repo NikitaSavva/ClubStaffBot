@@ -34,7 +34,7 @@ class PlanSeed(TypedDict):
 
 PLANS: tuple[PlanSeed, ...] = (
     {
-        "code": "MVP_8_VISITS",
+        "code": "8_VISITS",
         "name": "8 посещений",
         "visit_limit": 8,
         "duration_months": 1,
@@ -45,7 +45,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_12_VISITS",
+        "code": "12_VISITS",
         "name": "12 посещений",
         "visit_limit": 12,
         "duration_months": 1,
@@ -56,7 +56,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_MINI_GROUP",
+        "code": "MINI_GROUP",
         "name": "Мини-группа",
         "visit_limit": 12,
         "duration_months": 1,
@@ -67,7 +67,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_UNLIMITED",
+        "code": "UNLIMITED",
         "name": "Безлимит",
         "visit_limit": None,
         "duration_months": 1,
@@ -78,7 +78,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_3_MONTHS",
+        "code": "3_MONTHS",
         "name": "3 месяца",
         "visit_limit": 36,
         "duration_months": 3,
@@ -89,7 +89,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_6_MONTHS",
+        "code": "6_MONTHS",
         "name": "6 месяцев",
         "visit_limit": 72,
         "duration_months": 6,
@@ -100,7 +100,7 @@ PLANS: tuple[PlanSeed, ...] = (
         "is_active": True,
     },
     {
-        "code": "MVP_12_MONTHS",
+        "code": "12_MONTHS",
         "name": "12 месяцев",
         "visit_limit": 144,
         "duration_months": 12,

@@ -123,13 +123,13 @@ EXPECTED_GROUP_NAMES = {
     "Дети 6–9 лет",
 }
 EXPECTED_PLAN_CODES = {
-    "MVP_8_VISITS",
-    "MVP_12_VISITS",
-    "MVP_MINI_GROUP",
-    "MVP_UNLIMITED",
-    "MVP_3_MONTHS",
-    "MVP_6_MONTHS",
-    "MVP_12_MONTHS",
+    "8_VISITS",
+    "12_VISITS",
+    "MINI_GROUP",
+    "UNLIMITED",
+    "3_MONTHS",
+    "6_MONTHS",
+    "12_MONTHS",
 }
 
 
@@ -576,9 +576,8 @@ async def _assert_seeded_subscription_plans(
                 "CAST(access_scope AS VARCHAR) AS access_scope, "
                 "CAST(required_group_type AS VARCHAR) AS required_group_type, "
                 "is_active FROM subscription_plans "
-                "WHERE code IN ('MVP_8_VISITS', 'MVP_12_VISITS', "
-                "'MVP_MINI_GROUP', 'MVP_UNLIMITED', 'MVP_3_MONTHS', "
-                "'MVP_6_MONTHS', 'MVP_12_MONTHS')"
+                "WHERE code IN ('8_VISITS', '12_VISITS', 'MINI_GROUP', "
+                "'UNLIMITED', '3_MONTHS', '6_MONTHS', '12_MONTHS')"
             )
         )
     ).mappings().all()
@@ -587,7 +586,7 @@ async def _assert_seeded_subscription_plans(
     assert len(plans) == 7
 
     expected = {
-        "MVP_8_VISITS": (
+        "8_VISITS": (
             "8 посещений",
             Decimal("4000"),
             1,
@@ -596,7 +595,7 @@ async def _assert_seeded_subscription_plans(
             "SPECIFIC_GROUP",
             None,
         ),
-        "MVP_12_VISITS": (
+        "12_VISITS": (
             "12 посещений",
             Decimal("6000"),
             1,
@@ -605,7 +604,7 @@ async def _assert_seeded_subscription_plans(
             "SPECIFIC_GROUP",
             None,
         ),
-        "MVP_MINI_GROUP": (
+        "MINI_GROUP": (
             "Мини-группа",
             Decimal("8000"),
             1,
@@ -614,7 +613,7 @@ async def _assert_seeded_subscription_plans(
             "SPECIFIC_GROUP",
             "MINI",
         ),
-        "MVP_UNLIMITED": (
+        "UNLIMITED": (
             "Безлимит",
             Decimal("10000"),
             1,
@@ -623,7 +622,7 @@ async def _assert_seeded_subscription_plans(
             "ALL_REGULAR_GROUPS",
             None,
         ),
-        "MVP_3_MONTHS": (
+        "3_MONTHS": (
             "3 месяца",
             Decimal("18000"),
             3,
@@ -632,7 +631,7 @@ async def _assert_seeded_subscription_plans(
             "SPECIFIC_GROUP",
             None,
         ),
-        "MVP_6_MONTHS": (
+        "6_MONTHS": (
             "6 месяцев",
             Decimal("36000"),
             6,
@@ -641,7 +640,7 @@ async def _assert_seeded_subscription_plans(
             "SPECIFIC_GROUP",
             None,
         ),
-        "MVP_12_MONTHS": (
+        "12_MONTHS": (
             "12 месяцев",
             Decimal("72000"),
             12,
@@ -670,13 +669,13 @@ async def _assert_seeded_subscription_plans(
         for plan in plans
         if plan["access_scope"] == "ALL_REGULAR_GROUPS"
     ]
-    assert [plan["code"] for plan in unlimited] == ["MVP_UNLIMITED"]
+    assert [plan["code"] for plan in unlimited] == ["UNLIMITED"]
     assert unlimited[0]["visit_limit"] is None
 
     mini_specific = [
         plan for plan in plans if plan["required_group_type"] == "MINI"
     ]
-    assert [plan["code"] for plan in mini_specific] == ["MVP_MINI_GROUP"]
+    assert [plan["code"] for plan in mini_specific] == ["MINI_GROUP"]
     assert mini_specific[0]["access_scope"] == "SPECIFIC_GROUP"
 
     unrestricted_specific = {
@@ -686,8 +685,8 @@ async def _assert_seeded_subscription_plans(
         and plan["required_group_type"] is None
     }
     assert unrestricted_specific == EXPECTED_PLAN_CODES - {
-        "MVP_MINI_GROUP",
-        "MVP_UNLIMITED",
+        "MINI_GROUP",
+        "UNLIMITED",
     }
 
 
