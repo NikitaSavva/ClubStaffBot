@@ -1,6 +1,13 @@
 from dishka import Provider, Scope, provide
 
 from application.athletes import CreateManualAthleteInteractor
+from application.club import (
+    AssignTrainingGroupTrainerInteractor,
+    ListTrainerCandidatesInteractor,
+    ListTrainingGroupsInteractor,
+    TrainingGroupReader,
+    TrainingGroupRepository,
+)
 from application.common import Clock, UnitOfWork
 from application.identity.account_link import (
     CreateAthleteAccountLinkInviteInteractor,
@@ -30,6 +37,49 @@ from application.identity.role_management import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_list_training_groups_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        training_group_reader: TrainingGroupReader,
+    ) -> ListTrainingGroupsInteractor:
+        return ListTrainingGroupsInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            training_group_reader=training_group_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_list_trainer_candidates_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        bot_user_reader: BotUserReader,
+    ) -> ListTrainerCandidatesInteractor:
+        return ListTrainerCandidatesInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            bot_user_reader=bot_user_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_assign_training_group_trainer_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        training_group_repository: TrainingGroupRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+    ) -> AssignTrainingGroupTrainerInteractor:
+        return AssignTrainingGroupTrainerInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            training_group_repository=training_group_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_assign_owner_interactor(
         self,

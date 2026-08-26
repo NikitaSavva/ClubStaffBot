@@ -138,6 +138,7 @@ async def add_user_with_roles(
             "admin-banner-file-id",
             [
                 [("Добавить спортсмена", "administrator.create_athlete")],
+                [("Назначить тренера", "administrator.assign_trainer")],
                 [
                     ("Пользователи", "administrator.manage_users"),
                     ("Связать аккаунт", "administrator.link_athlete_account"),
@@ -153,6 +154,7 @@ async def add_user_with_roles(
             "admin-banner-file-id",
             [
                 [("Добавить спортсмена", "administrator.create_athlete")],
+                [("Назначить тренера", "administrator.assign_trainer")],
                 [
                     ("Пользователи", "administrator.manage_users"),
                     ("Связать аккаунт", "administrator.link_athlete_account"),

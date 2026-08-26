@@ -11,6 +11,9 @@ from presentation.telegram.handlers.role_management import (
     create_role_management_router,
 )
 from presentation.telegram.handlers.start import create_start_router
+from presentation.telegram.handlers.trainer_assignment import (
+    create_trainer_assignment_router,
+)
 from presentation.telegram.middlewares import ActiveScreenCallbackMiddleware
 
 
@@ -22,4 +25,5 @@ def create_telegram_router() -> Router:
     router.include_router(create_account_link_router())
     router.include_router(create_athlete_creation_router())
     router.include_router(create_role_management_router())
+    router.include_router(create_trainer_assignment_router())
     return router

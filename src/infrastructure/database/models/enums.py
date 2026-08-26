@@ -1,9 +1,6 @@
 from enum import StrEnum
 
-
-class TrainingGroupType(StrEnum):
-    REGULAR = "REGULAR"
-    MINI = "MINI"
+from domain.club import TrainingGroupType as TrainingGroupType
 
 
 class TrainingSessionStatus(StrEnum):
