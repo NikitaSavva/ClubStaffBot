@@ -1,9 +1,11 @@
 import asyncio
 from collections import Counter
 from datetime import time
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
@@ -13,6 +15,7 @@ from infrastructure.database.session import create_engine
 
 PROJECT_ROOT = Path(__file__).parents[3]
 PRE_CLUB_SEED_REVISION = "9b5a2c7e1d4f"
+PLAN_SCHEMA_REVISION = "g7b8c9d0e1f2"
 
 MONDAY = 0
 TUESDAY = 1
@@ -119,12 +122,22 @@ EXPECTED_GROUP_NAMES = {
     "Девушки",
     "Дети 6–9 лет",
 }
+EXPECTED_PLAN_CODES = {
+    "MVP_8_VISITS",
+    "MVP_12_VISITS",
+    "MVP_MINI_GROUP",
+    "MVP_UNLIMITED",
+    "MVP_3_MONTHS",
+    "MVP_6_MONTHS",
+    "MVP_12_MONTHS",
+}
 
 
 async def test_seeded_club_structure_and_schedule(
     db_session: AsyncSession,
 ) -> None:
     await _assert_seeded_club_structure(db_session)
+    await _assert_seeded_subscription_plans(db_session)
 
 
 def test_migration_round_trip_and_models_match_head(database_url: str) -> None:
@@ -135,6 +148,27 @@ def test_migration_round_trip_and_models_match_head(database_url: str) -> None:
     command.downgrade(config, PRE_CLUB_SEED_REVISION)
     athlete_public_id = uuid4()
     asyncio.run(_insert_legacy_data(database_url, athlete_public_id))
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Cannot replace duration_days.*duration_days=14, "
+            "subscription_count=1"
+        ),
+    ):
+        command.upgrade(config, "head")
+    asyncio.run(_assert_legacy_plan_blocked_migration(database_url))
+    asyncio.run(_delete_legacy_plan_usage(database_url))
+
+    command.upgrade(config, PLAN_SCHEMA_REVISION)
+    asyncio.run(_insert_conflicting_plan(database_url))
+    with pytest.raises(
+        RuntimeError,
+        match="SubscriptionPlan seed conflicts with existing rows",
+    ):
+        command.upgrade(config, "head")
+    asyncio.run(_assert_conflicting_plan_was_not_duplicated(database_url))
+    asyncio.run(_delete_conflicting_plan(database_url))
 
     command.upgrade(config, "head")
     asyncio.run(_assert_legacy_data_at_head(database_url, athlete_public_id))
@@ -157,20 +191,33 @@ async def _insert_legacy_data(
     engine = create_engine(database_url)
     try:
         async with engine.begin() as connection:
-            await connection.execute(
-                text(
-                    "INSERT INTO athletes "
-                    "(athlete_public_id, user_id, first_name, last_name, "
-                    "phone, is_active) "
-                    "VALUES (CAST(:athlete_public_id AS UUID), NULL, "
-                    ":first_name, :last_name, NULL, true)"
-                ),
-                {
-                    "athlete_public_id": str(athlete_public_id),
-                    "first_name": "Legacy",
-                    "last_name": "Athlete",
-                },
-            )
+            athlete_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO athletes "
+                        "(athlete_public_id, user_id, first_name, last_name, "
+                        "phone, is_active) "
+                        "VALUES (CAST(:athlete_public_id AS UUID), NULL, "
+                        ":first_name, :last_name, NULL, true) RETURNING id"
+                    ),
+                    {
+                        "athlete_public_id": str(athlete_public_id),
+                        "first_name": "Legacy",
+                        "last_name": "Athlete",
+                    },
+                )
+            ).scalar_one()
+            plan_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO subscription_plans "
+                        "(name, visit_limit, duration_days, price, "
+                        "is_unlimited, is_active) "
+                        "VALUES ('Legacy fortnight', 4, 14, 1500, false, "
+                        "true) RETURNING id"
+                    )
+                )
+            ).scalar_one()
             trainer_id = (
                 await connection.execute(
                     text(
@@ -234,6 +281,132 @@ async def _insert_legacy_data(
                     {"group_id": mma_group_id, "weekday": SUNDAY},
                 ],
             )
+            await connection.execute(
+                text(
+                    "INSERT INTO subscriptions "
+                    "(athlete_id, group_id, plan_id, activated_by_user_id, "
+                    "activated_at, starts_at, expires_at, activation_price, "
+                    "status) VALUES (:athlete_id, :group_id, :plan_id, "
+                    ":actor_id, now(), now(), now() + INTERVAL '14 days', "
+                    "1500, CAST('ACTIVE' AS subscription_status))"
+                ),
+                {
+                    "athlete_id": athlete_id,
+                    "group_id": boxing_group_id,
+                    "plan_id": plan_id,
+                    "actor_id": trainer_id,
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_legacy_plan_blocked_migration(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            plan = (
+                await connection.execute(
+                    text(
+                        "SELECT plan.name, plan.duration_days, "
+                        "count(subscription.id) AS subscription_count "
+                        "FROM subscription_plans AS plan "
+                        "LEFT JOIN subscriptions AS subscription "
+                        "ON subscription.plan_id = plan.id "
+                        "WHERE plan.name = 'Legacy fortnight' "
+                        "GROUP BY plan.id, plan.name, plan.duration_days"
+                    )
+                )
+            ).one()
+            columns = (
+                await connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'subscription_plans' AND "
+                        "column_name IN ('duration_days', 'duration_months')"
+                    )
+                )
+            ).scalars().all()
+        assert plan == ("Legacy fortnight", 14, 1)
+        assert columns == ["duration_days"]
+    finally:
+        await engine.dispose()
+
+
+async def _delete_legacy_plan_usage(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            plan_id = (
+                await connection.execute(
+                    text(
+                        "SELECT id FROM subscription_plans "
+                        "WHERE name = 'Legacy fortnight'"
+                    )
+                )
+            ).scalar_one()
+            await connection.execute(
+                text("DELETE FROM subscriptions WHERE plan_id = :plan_id"),
+                {"plan_id": plan_id},
+            )
+            await connection.execute(
+                text("DELETE FROM subscription_plans WHERE id = :plan_id"),
+                {"plan_id": plan_id},
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _insert_conflicting_plan(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO subscription_plans "
+                    "(code, name, visit_limit, duration_months, price, "
+                    "is_unlimited, access_scope, required_group_type, "
+                    "is_active) VALUES ('CUSTOM_8_VISITS', '8 посещений', "
+                    "5, 2, 2500, false, "
+                    "CAST('SPECIFIC_GROUP' AS subscription_access_scope), "
+                    "NULL, true)"
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_conflicting_plan_was_not_duplicated(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            count = (
+                await connection.execute(
+                    text(
+                        "SELECT count(*) FROM subscription_plans "
+                        "WHERE name IN ('8 посещений', '12 посещений', "
+                        "'Мини-группа', 'Безлимит', '3 месяца', "
+                        "'6 месяцев', '12 месяцев')"
+                    )
+                )
+            ).scalar_one()
+        assert count == 1
+    finally:
+        await engine.dispose()
+
+
+async def _delete_conflicting_plan(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "DELETE FROM subscription_plans "
+                    "WHERE name = '8 посещений'"
+                )
+            )
     finally:
         await engine.dispose()
 
@@ -243,6 +416,7 @@ async def _assert_seeded_data_at_url(database_url: str) -> None:
     try:
         async with engine.connect() as connection:
             await _assert_seeded_club_structure(connection)
+            await _assert_seeded_subscription_plans(connection)
     finally:
         await engine.dispose()
 
@@ -365,6 +539,158 @@ async def _assert_seeded_club_structure(
     assert all(rule["is_active"] for rule in rules)
 
 
+async def _assert_seeded_subscription_plans(
+    connection: AsyncConnection | AsyncSession,
+) -> None:
+    schema = (
+        await connection.execute(
+            text(
+                "SELECT column_name, is_nullable, udt_name "
+                "FROM information_schema.columns "
+                "WHERE table_name = 'subscription_plans' AND "
+                "column_name IN ('code', 'duration_days', 'duration_months', "
+                "'access_scope', "
+                "'required_group_type')"
+            )
+        )
+    ).mappings().all()
+    columns = {row["column_name"]: row for row in schema}
+    assert set(columns) == {
+        "code",
+        "duration_months",
+        "access_scope",
+        "required_group_type",
+    }
+    assert columns["code"]["is_nullable"] == "NO"
+    assert columns["duration_months"]["is_nullable"] == "NO"
+    assert columns["access_scope"]["is_nullable"] == "NO"
+    assert columns["required_group_type"]["is_nullable"] == "YES"
+    assert columns["access_scope"]["udt_name"] == "subscription_access_scope"
+    assert columns["required_group_type"]["udt_name"] == "training_group_type"
+
+    plans = (
+        await connection.execute(
+            text(
+                "SELECT code, name, price, duration_months, "
+                "visit_limit, is_unlimited, "
+                "CAST(access_scope AS VARCHAR) AS access_scope, "
+                "CAST(required_group_type AS VARCHAR) AS required_group_type, "
+                "is_active FROM subscription_plans "
+                "WHERE code IN ('MVP_8_VISITS', 'MVP_12_VISITS', "
+                "'MVP_MINI_GROUP', 'MVP_UNLIMITED', 'MVP_3_MONTHS', "
+                "'MVP_6_MONTHS', 'MVP_12_MONTHS')"
+            )
+        )
+    ).mappings().all()
+    plans_by_code = {plan["code"]: plan for plan in plans}
+    assert set(plans_by_code) == EXPECTED_PLAN_CODES
+    assert len(plans) == 7
+
+    expected = {
+        "MVP_8_VISITS": (
+            "8 посещений",
+            Decimal("4000"),
+            1,
+            8,
+            False,
+            "SPECIFIC_GROUP",
+            None,
+        ),
+        "MVP_12_VISITS": (
+            "12 посещений",
+            Decimal("6000"),
+            1,
+            12,
+            False,
+            "SPECIFIC_GROUP",
+            None,
+        ),
+        "MVP_MINI_GROUP": (
+            "Мини-группа",
+            Decimal("8000"),
+            1,
+            12,
+            False,
+            "SPECIFIC_GROUP",
+            "MINI",
+        ),
+        "MVP_UNLIMITED": (
+            "Безлимит",
+            Decimal("10000"),
+            1,
+            None,
+            True,
+            "ALL_REGULAR_GROUPS",
+            None,
+        ),
+        "MVP_3_MONTHS": (
+            "3 месяца",
+            Decimal("18000"),
+            3,
+            36,
+            False,
+            "SPECIFIC_GROUP",
+            None,
+        ),
+        "MVP_6_MONTHS": (
+            "6 месяцев",
+            Decimal("36000"),
+            6,
+            72,
+            False,
+            "SPECIFIC_GROUP",
+            None,
+        ),
+        "MVP_12_MONTHS": (
+            "12 месяцев",
+            Decimal("72000"),
+            12,
+            144,
+            False,
+            "SPECIFIC_GROUP",
+            None,
+        ),
+    }
+    for code, semantics in expected.items():
+        plan = plans_by_code[code]
+        assert (
+            plan["name"],
+            plan["price"],
+            plan["duration_months"],
+            plan["visit_limit"],
+            plan["is_unlimited"],
+            plan["access_scope"],
+            plan["required_group_type"],
+        ) == semantics
+        assert isinstance(plan["price"], Decimal)
+        assert plan["is_active"] is True
+
+    unlimited = [
+        plan
+        for plan in plans
+        if plan["access_scope"] == "ALL_REGULAR_GROUPS"
+    ]
+    assert [plan["code"] for plan in unlimited] == ["MVP_UNLIMITED"]
+    assert unlimited[0]["visit_limit"] is None
+
+    mini_specific = [
+        plan for plan in plans if plan["required_group_type"] == "MINI"
+    ]
+    assert [plan["code"] for plan in mini_specific] == ["MVP_MINI_GROUP"]
+    assert mini_specific[0]["access_scope"] == "SPECIFIC_GROUP"
+
+    unrestricted_specific = {
+        plan["code"]
+        for plan in plans
+        if plan["access_scope"] == "SPECIFIC_GROUP"
+        and plan["required_group_type"] is None
+    }
+    assert unrestricted_specific == EXPECTED_PLAN_CODES - {
+        "MVP_MINI_GROUP",
+        "MVP_UNLIMITED",
+    }
+
+
 async def _assert_legacy_data_at_head(
     database_url: str,
     athlete_public_id: UUID,
@@ -478,6 +804,15 @@ async def _assert_legacy_data_at_prior_revision(database_url: str) -> None:
                     )
                 )
             ).all()
+            plans = (
+                await connection.execute(
+                    text(
+                        "SELECT name, visit_limit, duration_days, price, "
+                        "is_unlimited, is_active FROM subscription_plans "
+                        "ORDER BY name"
+                    )
+                )
+            ).all()
         assert [
             (group["code"], group["group_name"], group["weekday"])
             for group in groups
@@ -488,5 +823,6 @@ async def _assert_legacy_data_at_prior_revision(database_url: str) -> None:
         assert all(group["trainer_id"] is not None for group in groups)
         assert seeded_groups == 0
         assert directions == [("BOXING", "Бокс"), ("LEGACY_MMA", "MMA")]
+        assert plans == []
     finally:
         await engine.dispose()

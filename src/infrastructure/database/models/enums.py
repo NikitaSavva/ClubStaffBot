@@ -1,6 +1,9 @@
 from enum import StrEnum
 
 from domain.club import TrainingGroupType as TrainingGroupType
+from domain.subscriptions import (
+    SubscriptionAccessScope as SubscriptionAccessScope,
+)
 
 
 class TrainingSessionStatus(StrEnum):

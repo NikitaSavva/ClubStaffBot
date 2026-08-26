@@ -20,6 +20,7 @@ from infrastructure.database.models import (
     RoleModel,
     ScheduleRuleModel,
     SportDirectionModel,
+    SubscriptionAccessScope,
     SubscriptionModel,
     SubscriptionPlanModel,
     SubscriptionStatus,
@@ -150,13 +151,20 @@ async def add_training_session(
     return training_session
 
 
-async def add_subscription_plan(session: AsyncSession) -> SubscriptionPlanModel:
+async def add_subscription_plan(
+    session: AsyncSession,
+    *,
+    code: str | None = None,
+) -> SubscriptionPlanModel:
     plan = SubscriptionPlanModel(
+        code=code or f"TEST_PLAN_{uuid4()}",
         name="Eight visits",
         visit_limit=8,
-        duration_days=30,
+        duration_months=1,
         price=Decimal("5000.00"),
         is_unlimited=False,
+        access_scope=SubscriptionAccessScope.SPECIFIC_GROUP,
+        required_group_type=None,
         is_active=True,
     )
     session.add(plan)
@@ -352,6 +360,16 @@ async def test_group_name_is_unique(db_session: AsyncSession) -> None:
     db_session.add(GroupNameModel(name=name))
     with pytest.raises(IntegrityError):
         await db_session.flush()
+
+
+async def test_subscription_plan_code_is_unique(
+    db_session: AsyncSession,
+) -> None:
+    code = f"TEST_PLAN_{uuid4()}"
+    await add_subscription_plan(db_session, code=code)
+
+    with pytest.raises(IntegrityError):
+        await add_subscription_plan(db_session, code=code)
 
 
 async def test_two_active_subscriptions_for_one_athlete_are_rejected(
