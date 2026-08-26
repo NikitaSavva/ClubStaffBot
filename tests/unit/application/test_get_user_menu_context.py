@@ -91,6 +91,10 @@ def build_interactor(
                     title="Связать аккаунт",
                 ),
                 MenuItem(
+                    action_id="administrator.assign_trainer",
+                    title="Назначить тренера",
+                ),
+                MenuItem(
                     action_id="administrator.manage_users",
                     title="Пользователи",
                 ),
@@ -110,6 +114,10 @@ def build_interactor(
                 MenuItem(
                     action_id="administrator.link_athlete_account",
                     title="Связать аккаунт",
+                ),
+                MenuItem(
+                    action_id="administrator.assign_trainer",
+                    title="Назначить тренера",
                 ),
                 MenuItem(
                     action_id="administrator.manage_users",
@@ -168,6 +176,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "administrator.home",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
+        "administrator.assign_trainer",
         "administrator.manage_users",
         "trainer.home",
         "athlete.home",
@@ -188,6 +197,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
         "owner.home",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
+        "administrator.assign_trainer",
         "administrator.manage_users",
         "administrator.home",
     ]

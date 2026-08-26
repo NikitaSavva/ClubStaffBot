@@ -1,3 +1,6 @@
+from infrastructure.database.repositories.club import (
+    SqlAlchemyTrainingGroupRepository,
+)
 from infrastructure.database.repositories.identity import (
     SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
@@ -11,5 +14,6 @@ __all__ = [
     "SqlAlchemyAuditLogRepository",
     "SqlAlchemyBotInviteRepository",
     "SqlAlchemyRoleRepository",
+    "SqlAlchemyTrainingGroupRepository",
     "SqlAlchemyUserRepository",
 ]

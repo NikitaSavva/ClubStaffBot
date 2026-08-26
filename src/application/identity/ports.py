@@ -18,6 +18,11 @@ class UserRepository(Protocol):
 class BotUserReader(Protocol):
     async def search(self, query: str) -> tuple[BotUserSummary, ...]: ...
 
+    async def list_by_role(
+        self,
+        role_code: SystemRoleCode,
+    ) -> tuple[BotUserSummary, ...]: ...
+
 
 class AthleteRepository(Protocol):
     async def add(self, athlete: Athlete) -> int: ...

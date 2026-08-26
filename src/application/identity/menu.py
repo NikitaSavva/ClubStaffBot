@@ -20,6 +20,10 @@ _ADMINISTRATIVE_MENU_ITEMS = (
         title="Связать аккаунт",
     ),
     MenuItem(
+        action_id="administrator.assign_trainer",
+        title="Назначить тренера",
+    ),
+    MenuItem(
         action_id="administrator.manage_users",
         title="Пользователи",
     ),

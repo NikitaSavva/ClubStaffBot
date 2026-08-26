@@ -25,6 +25,8 @@ class NavigationTarget(StrEnum):
     USERS_LIST = "users"
     USER_PROFILE = "user"
     ATHLETE_LINK_LIST = "athlete_link"
+    TRAINING_GROUPS = "training_groups"
+    TRAINER_CANDIDATES = "trainer_candidates"
     CREATE_ATHLETE_FIRST_NAME = "create_athlete_first_name"
     CREATE_ATHLETE_LAST_NAME = "create_athlete_last_name"
     CREATE_ATHLETE_BIRTH_DATE = "create_athlete_birth_date"

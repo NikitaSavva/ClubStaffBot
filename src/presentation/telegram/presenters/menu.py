@@ -124,6 +124,9 @@ def build_role_panel_screen(
         primary = items.get("administrator.create_athlete")
         if primary is not None:
             rows.append((_menu_item_button(primary),))
+        assign_trainer = items.get("administrator.assign_trainer")
+        if assign_trainer is not None:
+            rows.append((_menu_item_button(assign_trainer),))
         related = tuple(
             _menu_item_button(item)
             for action_id in (

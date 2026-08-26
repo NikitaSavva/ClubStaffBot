@@ -5,6 +5,13 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from application.athletes import CreateManualAthleteInteractor
+from application.club import (
+    AssignTrainingGroupTrainerInteractor,
+    ListTrainerCandidatesInteractor,
+    ListTrainingGroupsInteractor,
+    TrainingGroupReader,
+    TrainingGroupRepository,
+)
 from application.common import UnitOfWork
 from application.identity import (
     AssignOwnerInteractor,
@@ -29,12 +36,16 @@ from application.identity.ports import (
 )
 from bootstrap.config import Settings
 from bootstrap.container import create_container
-from infrastructure.database.readers import SqlAlchemyBotUserReader
+from infrastructure.database.readers import (
+    SqlAlchemyBotUserReader,
+    SqlAlchemyTrainingGroupReader,
+)
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
+    SqlAlchemyTrainingGroupRepository,
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
@@ -87,6 +98,12 @@ async def test_container_resolves_app_and_request_dependencies(
                 BotInviteRepository
             )
             bot_user_reader = await request_container.get(BotUserReader)
+            training_group_reader = await request_container.get(
+                TrainingGroupReader
+            )
+            training_group_repository = await request_container.get(
+                TrainingGroupRepository
+            )
             audit_repository = await request_container.get(
                 AuditLogRepository
             )
@@ -121,12 +138,31 @@ async def test_container_resolves_app_and_request_dependencies(
             remove_user_role_interactor = await request_container.get(
                 RemoveUserRoleInteractor
             )
+            list_training_groups_interactor = await request_container.get(
+                ListTrainingGroupsInteractor
+            )
+            list_trainer_candidates_interactor = await request_container.get(
+                ListTrainerCandidatesInteractor
+            )
+            assign_training_group_trainer_interactor = (
+                await request_container.get(
+                    AssignTrainingGroupTrainerInteractor
+                )
+            )
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
             assert isinstance(role_repository, SqlAlchemyRoleRepository)
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
             assert isinstance(bot_user_reader, SqlAlchemyBotUserReader)
+            assert isinstance(
+                training_group_reader,
+                SqlAlchemyTrainingGroupReader,
+            )
+            assert isinstance(
+                training_group_repository,
+                SqlAlchemyTrainingGroupRepository,
+            )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
             assert isinstance(
@@ -163,11 +199,25 @@ async def test_container_resolves_app_and_request_dependencies(
                 remove_user_role_interactor,
                 RemoveUserRoleInteractor,
             )
+            assert isinstance(
+                list_training_groups_interactor,
+                ListTrainingGroupsInteractor,
+            )
+            assert isinstance(
+                list_trainer_candidates_interactor,
+                ListTrainerCandidatesInteractor,
+            )
+            assert isinstance(
+                assign_training_group_trainer_interactor,
+                AssignTrainingGroupTrainerInteractor,
+            )
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
             assert invite_repository._session is first_session
             assert bot_user_reader._session is first_session
+            assert training_group_reader._session is first_session
+            assert training_group_repository._session is first_session
             assert audit_repository._session is first_session
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository
@@ -199,6 +249,18 @@ async def test_container_resolves_app_and_request_dependencies(
             assert remove_user_role_interactor._users is user_repository
             assert remove_user_role_interactor._roles is role_repository
             assert remove_user_role_interactor._audit_log is audit_repository
+            assert list_training_groups_interactor._reader is (
+                training_group_reader
+            )
+            assert list_trainer_candidates_interactor._reader is (
+                bot_user_reader
+            )
+            assert assign_training_group_trainer_interactor._training_groups is (
+                training_group_repository
+            )
+            assert assign_training_group_trainer_interactor._audit_log is (
+                audit_repository
+            )
 
         token_hasher = await container.get(InviteTokenHasher)
         token_generator = await container.get(InviteTokenGenerator)

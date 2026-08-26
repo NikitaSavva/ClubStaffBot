@@ -1,6 +1,7 @@
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.club import TrainingGroupReader, TrainingGroupRepository
 from application.common import UnitOfWork
 from application.identity.ports import (
     AthleteRepository,
@@ -10,18 +11,36 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
-from infrastructure.database.readers import SqlAlchemyBotUserReader
+from infrastructure.database.readers import (
+    SqlAlchemyBotUserReader,
+    SqlAlchemyTrainingGroupReader,
+)
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
+    SqlAlchemyTrainingGroupRepository,
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_training_group_reader(
+        self,
+        session: AsyncSession,
+    ) -> TrainingGroupReader:
+        return SqlAlchemyTrainingGroupReader(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_training_group_repository(
+        self,
+        session: AsyncSession,
+    ) -> TrainingGroupRepository:
+        return SqlAlchemyTrainingGroupRepository(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_bot_user_reader(
         self,
