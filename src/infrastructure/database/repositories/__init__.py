@@ -8,12 +8,18 @@ from infrastructure.database.repositories.identity import (
     SqlAlchemyRoleRepository,
     SqlAlchemyUserRepository,
 )
+from infrastructure.database.repositories.training_sessions import (
+    SqlAlchemyScheduleRuleRepository,
+    SqlAlchemyTrainingSessionRepository,
+)
 
 __all__ = [
     "SqlAlchemyAthleteRepository",
     "SqlAlchemyAuditLogRepository",
     "SqlAlchemyBotInviteRepository",
     "SqlAlchemyRoleRepository",
+    "SqlAlchemyScheduleRuleRepository",
     "SqlAlchemyTrainingGroupRepository",
+    "SqlAlchemyTrainingSessionRepository",
     "SqlAlchemyUserRepository",
 ]

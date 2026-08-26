@@ -133,7 +133,7 @@ async def add_training_session(
     session: AsyncSession,
     *,
     group_id: int,
-    trainer_id: int,
+    trainer_id: int | None,
     schedule_rule_id: int | None,
     starts_at: datetime = NOW,
 ) -> TrainingSessionModel:
@@ -339,6 +339,21 @@ async def test_training_session_rule_and_start_are_unique(
             db_session,
             group_id=group.id,
             trainer_id=trainer.id,
+            schedule_rule_id=rule.id,
+        )
+
+
+async def test_training_session_requires_trainer(
+    db_session: AsyncSession,
+) -> None:
+    group = await add_training_group(db_session, trainer_id=None)
+    rule = await add_schedule_rule(db_session, group.id)
+
+    with pytest.raises(IntegrityError):
+        await add_training_session(
+            db_session,
+            group_id=group.id,
+            trainer_id=None,
             schedule_rule_id=rule.id,
         )
 

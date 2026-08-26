@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 from dishka import Provider, Scope, provide
 
 from application.athletes import CreateManualAthleteInteractor
@@ -34,9 +36,41 @@ from application.identity.role_management import (
     RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
+from application.training_sessions import (
+    GenerateTrainingSessionsInteractor,
+    ScheduleRuleRepository,
+    TrainingSessionGenerationWindowResolver,
+    TrainingSessionRepository,
+)
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.APP)
+    def provide_training_session_generation_window_resolver(
+        self,
+        clock: Clock,
+        club_timezone: ZoneInfo,
+    ) -> TrainingSessionGenerationWindowResolver:
+        return TrainingSessionGenerationWindowResolver(
+            clock=clock,
+            club_timezone=club_timezone,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_generate_training_sessions_interactor(
+        self,
+        schedule_rule_repository: ScheduleRuleRepository,
+        training_session_repository: TrainingSessionRepository,
+        unit_of_work: UnitOfWork,
+        club_timezone: ZoneInfo,
+    ) -> GenerateTrainingSessionsInteractor:
+        return GenerateTrainingSessionsInteractor(
+            schedule_rule_repository=schedule_rule_repository,
+            training_session_repository=training_session_repository,
+            unit_of_work=unit_of_work,
+            club_timezone=club_timezone,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_list_training_groups_interactor(
         self,

@@ -11,6 +11,10 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.training_sessions import (
+    ScheduleRuleRepository,
+    TrainingSessionRepository,
+)
 from infrastructure.database.readers import (
     SqlAlchemyBotUserReader,
     SqlAlchemyTrainingGroupReader,
@@ -20,13 +24,29 @@ from infrastructure.database.repositories import (
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
+    SqlAlchemyScheduleRuleRepository,
     SqlAlchemyTrainingGroupRepository,
+    SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_schedule_rule_repository(
+        self,
+        session: AsyncSession,
+    ) -> ScheduleRuleRepository:
+        return SqlAlchemyScheduleRuleRepository(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_training_session_repository(
+        self,
+        session: AsyncSession,
+    ) -> TrainingSessionRepository:
+        return SqlAlchemyTrainingSessionRepository(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_training_group_reader(
         self,

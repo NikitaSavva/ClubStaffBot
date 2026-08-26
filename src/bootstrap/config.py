@@ -1,6 +1,7 @@
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,11 +22,22 @@ class Settings(BaseSettings):
     redis_port: int = Field(gt=0, le=65_535)
     redis_db: int = Field(ge=0)
 
+    club_timezone: str = Field(default="Europe/Moscow", min_length=1)
+
     telegram_bot_token: SecretStr = Field(min_length=1)
     admin_panel_banner_file_id: str | None = None
     trainer_panel_banner_file_id: str | None = None
     athlete_panel_banner_file_id: str | None = None
     role_selector_banner_file_id: str | None = None
+
+    @field_validator("club_timezone")
+    @classmethod
+    def validate_club_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("club_timezone must be a valid IANA timezone") from error
+        return value
 
     @property
     def database_url(self) -> str:
