@@ -1,16 +1,17 @@
-.PHONY: docker-up docker-down docker-status test lint typecheck
+.PHONY: build up down migrate lint typecheck
 
-docker-up:
+
+build:
+    docker compose build
+
+up:
 	docker compose up -d --wait
 
-docker-down:
+down:
 	docker compose down
 
-docker-status:
-	docker compose ps
-
-test:
-	pytest
+migrate:
+    docker compose run --rm api alembic upgrade head
 
 lint:
 	ruff check .
