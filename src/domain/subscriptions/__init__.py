@@ -1,3 +1,13 @@
-from domain.subscriptions.entities import SubscriptionAccessScope
+from domain.subscriptions.entities import (
+    Subscription,
+    SubscriptionAccessScope,
+    SubscriptionPlan,
+    SubscriptionStatus,
+)
 
-__all__ = ["SubscriptionAccessScope"]
+__all__ = [
+    "Subscription",
+    "SubscriptionAccessScope",
+    "SubscriptionPlan",
+    "SubscriptionStatus",
+]

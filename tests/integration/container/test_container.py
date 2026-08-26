@@ -5,7 +5,11 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from application.athletes import CreateManualAthleteInteractor
+from application.athletes import (
+    AthleteReader,
+    CreateManualAthleteInteractor,
+    ListAthletesInteractor,
+)
 from application.club import (
     AssignTrainingGroupTrainerInteractor,
     ListTrainerCandidatesInteractor,
@@ -35,6 +39,13 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.subscriptions import (
+    ActivateSubscriptionInteractor,
+    ListActiveSubscriptionPlansInteractor,
+    SubscriptionPlanReader,
+    SubscriptionPlanRepository,
+    SubscriptionRepository,
+)
 from application.training_sessions import (
     GenerateTrainingSessionsInteractor,
     ScheduleRuleRepository,
@@ -44,7 +55,9 @@ from application.training_sessions import (
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from infrastructure.database.readers import (
+    SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
 )
 from infrastructure.database.repositories import (
@@ -53,6 +66,8 @@ from infrastructure.database.repositories import (
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemyScheduleRuleRepository,
+    SqlAlchemySubscriptionPlanRepository,
+    SqlAlchemySubscriptionRepository,
     SqlAlchemyTrainingGroupRepository,
     SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
@@ -102,6 +117,7 @@ async def test_container_resolves_app_and_request_dependencies(
             assert first_session is second_session
             user_repository = await request_container.get(UserRepository)
             athlete_repository = await request_container.get(AthleteRepository)
+            athlete_reader = await request_container.get(AthleteReader)
             role_repository = await request_container.get(RoleRepository)
             invite_repository = await request_container.get(
                 BotInviteRepository
@@ -119,6 +135,15 @@ async def test_container_resolves_app_and_request_dependencies(
             training_session_repository = await request_container.get(
                 TrainingSessionRepository
             )
+            subscription_plan_reader = await request_container.get(
+                SubscriptionPlanReader
+            )
+            subscription_plan_repository = await request_container.get(
+                SubscriptionPlanRepository
+            )
+            subscription_repository = await request_container.get(
+                SubscriptionRepository
+            )
             audit_repository = await request_container.get(
                 AuditLogRepository
             )
@@ -128,6 +153,15 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             create_manual_athlete_interactor = await request_container.get(
                 CreateManualAthleteInteractor
+            )
+            list_athletes_interactor = await request_container.get(
+                ListAthletesInteractor
+            )
+            list_subscription_plans_interactor = await request_container.get(
+                ListActiveSubscriptionPlansInteractor
+            )
+            activate_subscription_interactor = await request_container.get(
+                ActivateSubscriptionInteractor
             )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
@@ -174,6 +208,7 @@ async def test_container_resolves_app_and_request_dependencies(
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
+            assert isinstance(athlete_reader, SqlAlchemyAthleteReader)
             assert isinstance(role_repository, SqlAlchemyRoleRepository)
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
             assert isinstance(bot_user_reader, SqlAlchemyBotUserReader)
@@ -194,6 +229,18 @@ async def test_container_resolves_app_and_request_dependencies(
                 SqlAlchemyTrainingSessionRepository,
             )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
+            assert isinstance(
+                subscription_plan_reader,
+                SqlAlchemySubscriptionPlanReader,
+            )
+            assert isinstance(
+                subscription_plan_repository,
+                SqlAlchemySubscriptionPlanRepository,
+            )
+            assert isinstance(
+                subscription_repository,
+                SqlAlchemySubscriptionRepository,
+            )
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
             assert isinstance(
                 registration_interactor,
@@ -202,6 +249,15 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 create_manual_athlete_interactor,
                 CreateManualAthleteInteractor,
+            )
+            assert isinstance(list_athletes_interactor, ListAthletesInteractor)
+            assert isinstance(
+                list_subscription_plans_interactor,
+                ListActiveSubscriptionPlansInteractor,
+            )
+            assert isinstance(
+                activate_subscription_interactor,
+                ActivateSubscriptionInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(
@@ -252,6 +308,7 @@ async def test_container_resolves_app_and_request_dependencies(
             assert str(club_timezone) == "Europe/Moscow"
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
+            assert athlete_reader._session is first_session
             assert role_repository._session is first_session
             assert invite_repository._session is first_session
             assert bot_user_reader._session is first_session
@@ -260,10 +317,23 @@ async def test_container_resolves_app_and_request_dependencies(
             assert schedule_rule_repository._session is first_session
             assert training_session_repository._session is first_session
             assert audit_repository._session is first_session
+            assert subscription_plan_reader._session is first_session
+            assert subscription_plan_repository._session is first_session
+            assert subscription_repository._session is first_session
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository
             assert menu_interactor._roles is role_repository
             assert create_manual_athlete_interactor._users is user_repository
+            assert list_athletes_interactor._reader is athlete_reader
+            assert list_subscription_plans_interactor._reader is (
+                subscription_plan_reader
+            )
+            assert activate_subscription_interactor._subscriptions is (
+                subscription_repository
+            )
+            assert activate_subscription_interactor._plans is (
+                subscription_plan_repository
+            )
             assert (
                 create_manual_athlete_interactor._athletes
                 is athlete_repository

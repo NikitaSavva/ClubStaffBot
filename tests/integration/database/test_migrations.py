@@ -1,6 +1,6 @@
 import asyncio
 from collections import Counter
-from datetime import time
+from datetime import UTC, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -16,6 +16,7 @@ from infrastructure.database.session import create_engine
 PROJECT_ROOT = Path(__file__).parents[3]
 PRE_CLUB_SEED_REVISION = "9b5a2c7e1d4f"
 PLAN_SCHEMA_REVISION = "g7b8c9d0e1f2"
+SUBSCRIPTION_PLAN_SEED_REVISION = "h8c9d0e1f2a3"
 
 MONDAY = 0
 TUESDAY = 1
@@ -140,6 +141,30 @@ async def test_seeded_club_structure_and_schedule(
     await _assert_seeded_subscription_plans(db_session)
 
 
+def test_subscription_activation_migration_preserves_existing_rows(
+    database_url: str,
+) -> None:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.downgrade(config, SUBSCRIPTION_PLAN_SEED_REVISION)
+    subscription_id, group_id = asyncio.run(
+        _insert_pre_activation_subscription(database_url)
+    )
+    command.upgrade(config, "head")
+    asyncio.run(
+        _assert_activation_schema_and_legacy_row(
+            database_url,
+            subscription_id,
+            group_id,
+        )
+    )
+    asyncio.run(
+        _delete_pre_activation_subscription(database_url, subscription_id)
+    )
+
+
 def test_migration_round_trip_and_models_match_head(database_url: str) -> None:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
@@ -182,6 +207,162 @@ def test_migration_round_trip_and_models_match_head(database_url: str) -> None:
     asyncio.run(_assert_legacy_data_at_head(database_url, athlete_public_id))
     asyncio.run(_assert_seeded_data_at_url(database_url))
     command.check(config)
+
+
+async def _insert_pre_activation_subscription(
+    database_url: str,
+) -> tuple[int, int]:
+    engine = create_engine(database_url)
+    suffix = uuid4().hex
+    now = datetime(2026, 8, 26, 12, tzinfo=UTC)
+    try:
+        async with engine.begin() as connection:
+            actor_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO users "
+                        "(telegram_id, username, first_name, last_name, "
+                        "is_active, registered_at, last_seen_at) VALUES "
+                        "(:telegram_id, :username, 'Legacy', 'Admin', true, "
+                        ":now, :now) RETURNING id"
+                    ),
+                    {
+                        "telegram_id": 80_000_000
+                        + uuid4().int % 1_000_000_000,
+                        "username": f"legacy_admin_{suffix}",
+                        "now": now,
+                    },
+                )
+            ).scalar_one()
+            athlete_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO athletes "
+                        "(athlete_public_id, user_id, first_name, last_name, "
+                        "birth_date, phone, is_active) VALUES "
+                        "(CAST(:public_id AS UUID), NULL, 'Legacy', "
+                        "'Subscriber', NULL, NULL, true) RETURNING id"
+                    ),
+                    {"public_id": str(uuid4())},
+                )
+            ).scalar_one()
+            group_id = (
+                await connection.execute(
+                    text("SELECT min(id) FROM training_groups")
+                )
+            ).scalar_one()
+            plan_id = (
+                await connection.execute(
+                    text(
+                        "SELECT id FROM subscription_plans "
+                        "WHERE code = '8_VISITS'"
+                    )
+                )
+            ).scalar_one()
+            subscription_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO subscriptions "
+                        "(athlete_id, group_id, plan_id, "
+                        "activated_by_user_id, activated_at, starts_at, "
+                        "expires_at, activation_price, status) VALUES "
+                        "(:athlete_id, :group_id, :plan_id, :actor_id, "
+                        ":now, :now, :expires_at, 4000, "
+                        "CAST('ACTIVE' AS subscription_status)) RETURNING id"
+                    ),
+                    {
+                        "athlete_id": athlete_id,
+                        "group_id": group_id,
+                        "plan_id": plan_id,
+                        "actor_id": actor_id,
+                        "now": now,
+                        "expires_at": datetime(2026, 9, 26, 12, tzinfo=UTC),
+                    },
+                )
+            ).scalar_one()
+        return subscription_id, group_id
+    finally:
+        await engine.dispose()
+
+
+async def _assert_activation_schema_and_legacy_row(
+    database_url: str,
+    subscription_id: int,
+    group_id: int,
+) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            columns = {
+                row[0]: row[1]
+                for row in (
+                    await connection.execute(
+                        text(
+                            "SELECT column_name, is_nullable "
+                            "FROM information_schema.columns "
+                            "WHERE table_name = 'subscriptions' "
+                            "AND column_name IN "
+                            "('group_id', 'remaining_visits')"
+                        )
+                    )
+                ).all()
+            }
+            legacy = (
+                await connection.execute(
+                    text(
+                        "SELECT group_id, remaining_visits, "
+                        "CAST(status AS VARCHAR) FROM subscriptions "
+                        "WHERE id = :subscription_id"
+                    ),
+                    {"subscription_id": subscription_id},
+                )
+            ).one()
+            constraint_exists = (
+                await connection.execute(
+                    text(
+                        "SELECT EXISTS (SELECT 1 FROM pg_constraint "
+                        "WHERE conname = "
+                        "'ck_subscriptions_remaining_visits_non_negative')"
+                    )
+                )
+            ).scalar_one()
+        assert columns == {"group_id": "YES", "remaining_visits": "YES"}
+        assert legacy == (group_id, None, "ACTIVE")
+        assert constraint_exists is True
+    finally:
+        await engine.dispose()
+
+
+async def _delete_pre_activation_subscription(
+    database_url: str,
+    subscription_id: int,
+) -> None:
+    engine = create_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            context = (
+                await connection.execute(
+                    text(
+                        "SELECT athlete_id, activated_by_user_id "
+                        "FROM subscriptions WHERE id = :subscription_id"
+                    ),
+                    {"subscription_id": subscription_id},
+                )
+            ).one()
+            await connection.execute(
+                text("DELETE FROM subscriptions WHERE id = :subscription_id"),
+                {"subscription_id": subscription_id},
+            )
+            await connection.execute(
+                text("DELETE FROM athletes WHERE id = :athlete_id"),
+                {"athlete_id": context.athlete_id},
+            )
+            await connection.execute(
+                text("DELETE FROM users WHERE id = :user_id"),
+                {"user_id": context.activated_by_user_id},
+            )
+    finally:
+        await engine.dispose()
 
 
 async def _insert_legacy_data(

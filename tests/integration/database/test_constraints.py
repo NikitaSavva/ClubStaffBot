@@ -176,10 +176,11 @@ async def add_subscription(
     session: AsyncSession,
     *,
     athlete_id: int,
-    group_id: int,
+    group_id: int | None,
     plan_id: int,
     activated_by_user_id: int,
     status: SubscriptionStatus,
+    remaining_visits: int | None = None,
 ) -> SubscriptionModel:
     subscription = SubscriptionModel(
         athlete_id=athlete_id,
@@ -190,6 +191,7 @@ async def add_subscription(
         starts_at=NOW,
         expires_at=NOW + timedelta(days=30),
         activation_price=Decimal("5000.00"),
+        remaining_visits=remaining_visits,
         status=status,
     )
     session.add(subscription)
@@ -430,6 +432,42 @@ async def test_active_and_historical_subscriptions_can_coexist(
             plan_id=plan.id,
             activated_by_user_id=actor.id,
             status=status,
+        )
+
+
+async def test_subscription_can_exist_without_specific_group(
+    db_session: AsyncSession,
+) -> None:
+    actor, athlete, _, plan = await add_subscription_context(db_session)
+
+    subscription = await add_subscription(
+        db_session,
+        athlete_id=athlete.id,
+        group_id=None,
+        plan_id=plan.id,
+        activated_by_user_id=actor.id,
+        status=SubscriptionStatus.ACTIVE,
+        remaining_visits=None,
+    )
+
+    assert subscription.group_id is None
+    assert subscription.remaining_visits is None
+
+
+async def test_negative_remaining_visits_are_rejected(
+    db_session: AsyncSession,
+) -> None:
+    actor, athlete, group, plan = await add_subscription_context(db_session)
+
+    with pytest.raises(IntegrityError):
+        await add_subscription(
+            db_session,
+            athlete_id=athlete.id,
+            group_id=group.id,
+            plan_id=plan.id,
+            activated_by_user_id=actor.id,
+            status=SubscriptionStatus.ACTIVE,
+            remaining_visits=-1,
         )
 
 

@@ -121,6 +121,11 @@ def build_role_panel_screen(
     }
     rows: list[tuple[InlineKeyboardButton, ...]] = []
     if role in (RolePanel.OWNER, RolePanel.ADMINISTRATOR):
+        activate_subscription = items.get(
+            "administrator.activate_subscription"
+        )
+        if activate_subscription is not None:
+            rows.append((_menu_item_button(activate_subscription),))
         primary = items.get("administrator.create_athlete")
         if primary is not None:
             rows.append((_menu_item_button(primary),))

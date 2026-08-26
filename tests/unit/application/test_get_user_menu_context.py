@@ -78,10 +78,14 @@ def build_interactor(
         (
             SystemRoleCode.OWNER,
             (
-                MenuItem(
-                    action_id="owner.home",
-                    title="Меню владельца",
-                ),
+                    MenuItem(
+                        action_id="owner.home",
+                        title="Меню владельца",
+                    ),
+                    MenuItem(
+                        action_id="administrator.activate_subscription",
+                        title="Выдать абонемент",
+                    ),
                 MenuItem(
                     action_id="administrator.create_athlete",
                     title="Добавить спортсмена",
@@ -103,10 +107,14 @@ def build_interactor(
         (
             SystemRoleCode.ADMINISTRATOR,
             (
-                MenuItem(
-                    action_id="administrator.home",
-                    title="Меню администратора",
-                ),
+                    MenuItem(
+                        action_id="administrator.home",
+                        title="Меню администратора",
+                    ),
+                    MenuItem(
+                        action_id="administrator.activate_subscription",
+                        title="Выдать абонемент",
+                    ),
                 MenuItem(
                     action_id="administrator.create_athlete",
                     title="Добавить спортсмена",
@@ -174,6 +182,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
 
     assert [item.action_id for item in result.items] == [
         "administrator.home",
+        "administrator.activate_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
         "administrator.assign_trainer",
@@ -195,6 +204,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
 
     assert [item.action_id for item in result.items] == [
         "owner.home",
+        "administrator.activate_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
         "administrator.assign_trainer",

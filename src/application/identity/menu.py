@@ -12,6 +12,10 @@ _ROLE_ORDER = (
 
 _ADMINISTRATIVE_MENU_ITEMS = (
     MenuItem(
+        action_id="administrator.activate_subscription",
+        title="Выдать абонемент",
+    ),
+    MenuItem(
         action_id="administrator.create_athlete",
         title="Добавить спортсмена",
     ),
