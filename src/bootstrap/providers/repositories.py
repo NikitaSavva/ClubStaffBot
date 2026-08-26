@@ -1,6 +1,7 @@
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.athletes import AthleteReader
 from application.club import TrainingGroupReader, TrainingGroupRepository
 from application.common import UnitOfWork
 from application.identity.ports import (
@@ -11,12 +12,19 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.subscriptions import (
+    SubscriptionPlanReader,
+    SubscriptionPlanRepository,
+    SubscriptionRepository,
+)
 from application.training_sessions import (
     ScheduleRuleRepository,
     TrainingSessionRepository,
 )
 from infrastructure.database.readers import (
+    SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
 )
 from infrastructure.database.repositories import (
@@ -25,6 +33,8 @@ from infrastructure.database.repositories import (
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemyScheduleRuleRepository,
+    SqlAlchemySubscriptionPlanRepository,
+    SqlAlchemySubscriptionRepository,
     SqlAlchemyTrainingGroupRepository,
     SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
@@ -33,6 +43,34 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_subscription_plan_reader(
+        self,
+        session: AsyncSession,
+    ) -> SubscriptionPlanReader:
+        return SqlAlchemySubscriptionPlanReader(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_subscription_plan_repository(
+        self,
+        session: AsyncSession,
+    ) -> SubscriptionPlanRepository:
+        return SqlAlchemySubscriptionPlanRepository(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_subscription_repository(
+        self,
+        session: AsyncSession,
+    ) -> SubscriptionRepository:
+        return SqlAlchemySubscriptionRepository(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_athlete_reader(
+        self,
+        session: AsyncSession,
+    ) -> AthleteReader:
+        return SqlAlchemyAthleteReader(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_schedule_rule_repository(
         self,

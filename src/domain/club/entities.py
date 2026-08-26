@@ -17,3 +17,4 @@ class TrainingSessionStatus(StrEnum):
 class TrainingGroup:
     id: int
     trainer_id: int | None
+    group_type: TrainingGroupType = TrainingGroupType.REGULAR

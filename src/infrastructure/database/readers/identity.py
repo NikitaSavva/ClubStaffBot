@@ -4,13 +4,45 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.athletes import AthleteSummary
 from application.identity.dto import BotUserSummary
 from domain.identity import SystemRoleCode
 from infrastructure.database.models import (
+    AthleteModel,
     RoleModel,
     UserModel,
     UserRoleModel,
 )
+
+
+class SqlAlchemyAthleteReader:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_all(self) -> tuple[AthleteSummary, ...]:
+        rows = (
+            await self._session.execute(
+                select(
+                    AthleteModel.id,
+                    AthleteModel.first_name,
+                    AthleteModel.last_name,
+                    AthleteModel.birth_date,
+                ).order_by(
+                    AthleteModel.last_name.asc().nulls_last(),
+                    AthleteModel.first_name.asc(),
+                    AthleteModel.id.asc(),
+                )
+            )
+        ).all()
+        return tuple(
+            AthleteSummary(
+                athlete_id=row.id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                birth_date=row.birth_date,
+            )
+            for row in rows
+        )
 
 
 @dataclass(slots=True)

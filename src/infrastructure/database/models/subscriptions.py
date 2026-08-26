@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -45,6 +46,10 @@ class SubscriptionPlanModel(TimestampMixin, Base):
 class SubscriptionModel(TimestampMixin, Base):
     __tablename__ = "subscriptions"
     __table_args__ = (
+        CheckConstraint(
+            "remaining_visits IS NULL OR remaining_visits >= 0",
+            name="remaining_visits_non_negative",
+        ),
         Index(
             "uq_subscriptions_active_athlete_id",
             "athlete_id",
@@ -55,13 +60,16 @@ class SubscriptionModel(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
-    group_id: Mapped[int] = mapped_column(ForeignKey("training_groups.id"))
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_groups.id")
+    )
     plan_id: Mapped[int] = mapped_column(ForeignKey("subscription_plans.id"))
     activated_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     activation_price: Mapped[Decimal] = mapped_column(Numeric)
+    remaining_visits: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[SubscriptionStatus] = mapped_column(
         Enum(SubscriptionStatus, name="subscription_status")
     )

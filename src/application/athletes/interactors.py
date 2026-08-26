@@ -1,5 +1,7 @@
 from application.athletes.commands import CreateManualAthleteCommand
-from application.athletes.dto import CreateManualAthleteResult
+from application.athletes.dto import AthleteSummary, CreateManualAthleteResult
+from application.athletes.ports import AthleteReader
+from application.athletes.queries import ListAthletesQuery
 from application.common import UnitOfWork
 from application.identity.authorization import require_administrative_actor
 from application.identity.ports import (
@@ -12,6 +14,29 @@ from domain.identity import Athlete
 
 ATHLETE_CREATED_MANUALLY_ACTION = "ATHLETE_CREATED_MANUALLY"
 ATHLETE_ENTITY_TYPE = "ATHLETE"
+
+
+class ListAthletesInteractor:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        athlete_reader: AthleteReader,
+    ) -> None:
+        self._users = user_repository
+        self._roles = role_repository
+        self._reader = athlete_reader
+
+    async def __call__(
+        self,
+        query: ListAthletesQuery,
+    ) -> tuple[AthleteSummary, ...]:
+        await require_administrative_actor(
+            telegram_id=query.actor_telegram_id,
+            users=self._users,
+            roles=self._roles,
+        )
+        return await self._reader.list_all()
 
 
 class CreateManualAthleteInteractor:

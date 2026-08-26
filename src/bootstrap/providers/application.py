@@ -2,7 +2,11 @@ from zoneinfo import ZoneInfo
 
 from dishka import Provider, Scope, provide
 
-from application.athletes import CreateManualAthleteInteractor
+from application.athletes import (
+    AthleteReader,
+    CreateManualAthleteInteractor,
+    ListAthletesInteractor,
+)
 from application.club import (
     AssignTrainingGroupTrainerInteractor,
     ListTrainerCandidatesInteractor,
@@ -36,6 +40,13 @@ from application.identity.role_management import (
     RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
+from application.subscriptions import (
+    ActivateSubscriptionInteractor,
+    ListActiveSubscriptionPlansInteractor,
+    SubscriptionPlanReader,
+    SubscriptionPlanRepository,
+    SubscriptionRepository,
+)
 from application.training_sessions import (
     GenerateTrainingSessionsInteractor,
     ScheduleRuleRepository,
@@ -45,6 +56,57 @@ from application.training_sessions import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_list_athletes_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        athlete_reader: AthleteReader,
+    ) -> ListAthletesInteractor:
+        return ListAthletesInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            athlete_reader=athlete_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_list_active_subscription_plans_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        subscription_plan_reader: SubscriptionPlanReader,
+    ) -> ListActiveSubscriptionPlansInteractor:
+        return ListActiveSubscriptionPlansInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            subscription_plan_reader=subscription_plan_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_activate_subscription_interactor(
+        self,
+        user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
+        role_repository: RoleRepository,
+        training_group_repository: TrainingGroupRepository,
+        subscription_plan_repository: SubscriptionPlanRepository,
+        subscription_repository: SubscriptionRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+    ) -> ActivateSubscriptionInteractor:
+        return ActivateSubscriptionInteractor(
+            user_repository=user_repository,
+            athlete_repository=athlete_repository,
+            role_repository=role_repository,
+            training_group_repository=training_group_repository,
+            subscription_plan_repository=subscription_plan_repository,
+            subscription_repository=subscription_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+            clock=clock,
+        )
+
     @provide(scope=Scope.APP)
     def provide_training_session_generation_window_resolver(
         self,

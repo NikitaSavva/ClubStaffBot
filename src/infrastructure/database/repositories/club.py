@@ -9,23 +9,23 @@ class SqlAlchemyTrainingGroupRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def get_by_id(
+        self,
+        training_group_id: int,
+    ) -> TrainingGroup | None:
+        model = await self._session.get(TrainingGroupModel, training_group_id)
+        return _to_training_group(model)
+
     async def get_by_id_for_update(
         self,
         training_group_id: int,
     ) -> TrainingGroup | None:
-        row = (
-            await self._session.execute(
-                select(
-                    TrainingGroupModel.id,
-                    TrainingGroupModel.trainer_id,
-                )
-                .where(TrainingGroupModel.id == training_group_id)
-                .with_for_update()
-            )
-        ).one_or_none()
-        if row is None:
-            return None
-        return TrainingGroup(id=row.id, trainer_id=row.trainer_id)
+        model = await self._session.scalar(
+            select(TrainingGroupModel)
+            .where(TrainingGroupModel.id == training_group_id)
+            .with_for_update()
+        )
+        return _to_training_group(model)
 
     async def assign_trainer(
         self,
@@ -43,3 +43,15 @@ class SqlAlchemyTrainingGroupRepository:
             .returning(TrainingGroupModel.id)
         )
         return assigned_group_id is not None
+
+
+def _to_training_group(
+    model: TrainingGroupModel | None,
+) -> TrainingGroup | None:
+    if model is None:
+        return None
+    return TrainingGroup(
+        id=model.id,
+        trainer_id=model.trainer_id,
+        group_type=model.group_type,
+    )

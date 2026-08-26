@@ -5,6 +5,11 @@ from domain.club import TrainingGroup
 
 
 class TrainingGroupRepository(Protocol):
+    async def get_by_id(
+        self,
+        training_group_id: int,
+    ) -> TrainingGroup | None: ...
+
     async def get_by_id_for_update(
         self,
         training_group_id: int,
