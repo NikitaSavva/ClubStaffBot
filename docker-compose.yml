@@ -11,6 +11,7 @@ x-application: &application
     REDIS_HOST: redis
     REDIS_PORT: 6379
     REDIS_DB: ${REDIS_DB:-0}
+    CLUB_TIMEZONE: ${CLUB_TIMEZONE:-Europe/Moscow}
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
     ADMIN_PANEL_BANNER_FILE_ID: ${ADMIN_PANEL_BANNER_FILE_ID:-}
     TRAINER_PANEL_BANNER_FILE_ID: ${TRAINER_PANEL_BANNER_FILE_ID:-}
@@ -39,6 +40,24 @@ services:
   bot:
     <<: *application
     command: ["python", "-m", "entrypoints.bot"]
+
+  celery-worker:
+    <<: *application
+    command:
+      - celery
+      - --app
+      - entrypoints.celery:app
+      - worker
+      - --loglevel=INFO
+
+  celery-beat:
+    <<: *application
+    command:
+      - celery
+      - --app
+      - entrypoints.celery:app
+      - beat
+      - --loglevel=INFO
 
   postgres:
     image: postgres:16-alpine

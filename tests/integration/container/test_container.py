@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from redis.asyncio import Redis
@@ -34,6 +35,12 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.training_sessions import (
+    GenerateTrainingSessionsInteractor,
+    ScheduleRuleRepository,
+    TrainingSessionGenerationWindowResolver,
+    TrainingSessionRepository,
+)
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from infrastructure.database.readers import (
@@ -45,7 +52,9 @@ from infrastructure.database.repositories import (
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
+    SqlAlchemyScheduleRuleRepository,
     SqlAlchemyTrainingGroupRepository,
+    SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
@@ -104,6 +113,12 @@ async def test_container_resolves_app_and_request_dependencies(
             training_group_repository = await request_container.get(
                 TrainingGroupRepository
             )
+            schedule_rule_repository = await request_container.get(
+                ScheduleRuleRepository
+            )
+            training_session_repository = await request_container.get(
+                TrainingSessionRepository
+            )
             audit_repository = await request_container.get(
                 AuditLogRepository
             )
@@ -149,6 +164,13 @@ async def test_container_resolves_app_and_request_dependencies(
                     AssignTrainingGroupTrainerInteractor
                 )
             )
+            generation_interactor = await request_container.get(
+                GenerateTrainingSessionsInteractor
+            )
+            generation_window_resolver = await request_container.get(
+                TrainingSessionGenerationWindowResolver
+            )
+            club_timezone = await request_container.get(ZoneInfo)
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
@@ -162,6 +184,14 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 training_group_repository,
                 SqlAlchemyTrainingGroupRepository,
+            )
+            assert isinstance(
+                schedule_rule_repository,
+                SqlAlchemyScheduleRuleRepository,
+            )
+            assert isinstance(
+                training_session_repository,
+                SqlAlchemyTrainingSessionRepository,
             )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(unit_of_work, SqlAlchemyUnitOfWork)
@@ -211,6 +241,15 @@ async def test_container_resolves_app_and_request_dependencies(
                 assign_training_group_trainer_interactor,
                 AssignTrainingGroupTrainerInteractor,
             )
+            assert isinstance(
+                generation_interactor,
+                GenerateTrainingSessionsInteractor,
+            )
+            assert isinstance(
+                generation_window_resolver,
+                TrainingSessionGenerationWindowResolver,
+            )
+            assert str(club_timezone) == "Europe/Moscow"
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
             assert role_repository._session is first_session
@@ -218,6 +257,8 @@ async def test_container_resolves_app_and_request_dependencies(
             assert bot_user_reader._session is first_session
             assert training_group_reader._session is first_session
             assert training_group_repository._session is first_session
+            assert schedule_rule_repository._session is first_session
+            assert training_session_repository._session is first_session
             assert audit_repository._session is first_session
             assert unit_of_work._session is first_session
             assert menu_interactor._users is user_repository

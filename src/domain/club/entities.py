@@ -7,6 +7,12 @@ class TrainingGroupType(StrEnum):
     MINI = "MINI"
 
 
+class TrainingSessionStatus(StrEnum):
+    SCHEDULED = "SCHEDULED"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+
+
 @dataclass(frozen=True, slots=True)
 class TrainingGroup:
     id: int

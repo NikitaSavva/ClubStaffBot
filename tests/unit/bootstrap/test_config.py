@@ -31,6 +31,7 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("REDIS_HOST", "cache")
     monkeypatch.setenv("REDIS_PORT", "6379")
     monkeypatch.setenv("REDIS_DB", "1")
+    monkeypatch.setenv("CLUB_TIMEZONE", "Europe/Moscow")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:test-token")
     monkeypatch.setenv("ADMIN_PANEL_BANNER_FILE_ID", "admin-file-id")
     monkeypatch.setenv("TRAINER_PANEL_BANNER_FILE_ID", "trainer-file-id")
@@ -43,6 +44,7 @@ def test_settings_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> Non
         "postgresql+asyncpg://user:pass%3Fword@database:5432/staff_bot"
     )
     assert settings.redis_url == "redis://cache:6379/1"
+    assert settings.club_timezone == "Europe/Moscow"
     assert settings.telegram_bot_token.get_secret_value() == "123456789:test-token"
     assert settings.admin_panel_banner_file_id == "admin-file-id"
     assert settings.trainer_panel_banner_file_id == "trainer-file-id"
@@ -93,3 +95,20 @@ def test_settings_requires_infrastructure_configuration(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_settings_rejects_unknown_club_timezone() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            postgres_host="database",
+            postgres_port=5432,
+            postgres_db="staff_bot",
+            postgres_user="user",
+            postgres_password="password",
+            redis_host="cache",
+            redis_port=6379,
+            redis_db=0,
+            club_timezone="Sochi/Unknown",
+            telegram_bot_token="123456789:test-token",
+            _env_file=None,
+        )

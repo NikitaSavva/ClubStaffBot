@@ -1,7 +1,10 @@
+from zoneinfo import ZoneInfo
+
 from dishka import Provider, Scope, provide
 
 from application.common import Clock
 from application.identity.ports import InviteTokenGenerator, InviteTokenHasher
+from bootstrap.config import Settings
 from infrastructure.clock import SystemClock
 from infrastructure.security import (
     SecretsInviteTokenGenerator,
@@ -13,6 +16,10 @@ class InfrastructureProvider(Provider):
     @provide(scope=Scope.APP)
     def provide_clock(self) -> Clock:
         return SystemClock()
+
+    @provide(scope=Scope.APP)
+    def provide_club_timezone(self, settings: Settings) -> ZoneInfo:
+        return ZoneInfo(settings.club_timezone)
 
     @provide(scope=Scope.APP)
     def provide_invite_token_hasher(self) -> InviteTokenHasher:
