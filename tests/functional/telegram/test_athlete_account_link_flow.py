@@ -308,7 +308,8 @@ async def test_administrator_qr_links_existing_athlete_without_creating_new_one(
         )
         assert athlete_list_method.reply_markup is not None
         assert returned_menu.caption == (
-            "Добавляйте спортсменов, связывайте их с Telegram и управляйте "
+            "Меню администратора\n\nДобавляйте спортсменов, связывайте их с "
+            "Telegram и управляйте "
             "ролями пользователей."
         )
         returned_menu_message_id = next(

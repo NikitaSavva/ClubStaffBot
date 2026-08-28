@@ -47,6 +47,7 @@ def group(
     return TrainingGroupSummary(
         training_group_id=group_id,
         direction_name="Кикбоксинг",
+        direction_short_name="K1",
         group_name=(
             "Мини-группа"
             if group_type is TrainingGroupType.MINI
@@ -123,14 +124,18 @@ def test_mini_plan_keyboard_contains_only_mini_groups() -> None:
     applicable = _applicable_groups(groups, mini_plan)
     keyboard = build_group_selection_keyboard(applicable)
     callbacks = {
-        button.callback_data
+        button.callback_data: button.text
         for row in keyboard.inline_keyboard
         for button in row
+        if button.callback_data is not None
     }
 
     assert applicable == (groups[1],)
     assert f"{SELECT_GROUP_PREFIX}11" in callbacks
     assert f"{SELECT_GROUP_PREFIX}10" not in callbacks
+    assert callbacks[f"{SELECT_GROUP_PREFIX}11"] == (
+        "K1 · Мини-группа · 19:00"
+    )
 
 
 def test_generic_specific_plan_keeps_regular_and_mini_groups() -> None:

@@ -858,7 +858,8 @@ async def test_stale_user_callback_returns_controlled_menu_path(
         assert (
             last_message_with_keyboard(sent_methods).text
             == (
-                "Добавляйте спортсменов, связывайте их с Telegram и "
+                "Меню администратора\n\nДобавляйте спортсменов, "
+                "связывайте их с Telegram и "
                 "управляйте ролями пользователей."
             )
         )

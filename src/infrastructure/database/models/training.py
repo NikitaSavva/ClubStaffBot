@@ -28,6 +28,7 @@ class SportDirectionModel(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String, unique=True)
     name: Mapped[str] = mapped_column(String)
+    short_name: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean)
 
 

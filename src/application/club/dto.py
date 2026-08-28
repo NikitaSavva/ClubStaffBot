@@ -29,6 +29,7 @@ class ScheduleRuleSummary:
 class TrainingGroupSummary:
     training_group_id: int
     direction_name: str
+    direction_short_name: str | None
     group_name: str
     group_type: TrainingGroupType
     schedule_rules: tuple[ScheduleRuleSummary, ...]

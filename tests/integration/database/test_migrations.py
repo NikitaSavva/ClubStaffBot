@@ -608,14 +608,34 @@ async def _assert_seeded_club_structure(
     directions = (
         await connection.execute(
             text(
-                "SELECT code, name, is_active FROM sport_directions "
+                "SELECT code, name, short_name, is_active "
+                "FROM sport_directions "
                 "WHERE name IN ('Кикбоксинг', 'MMA') ORDER BY name"
             )
         )
     ).mappings().all()
     assert len(directions) == 2
     assert {row["name"] for row in directions} == {"Кикбоксинг", "MMA"}
+    assert {row["name"]: row["short_name"] for row in directions} == {
+        "Кикбоксинг": "K1",
+        "MMA": "MMA",
+    }
     assert all(row["is_active"] for row in directions)
+
+    direction_schema = (
+        await connection.execute(
+            text(
+                "SELECT is_nullable, udt_name "
+                "FROM information_schema.columns "
+                "WHERE table_name = 'sport_directions' "
+                "AND column_name = 'short_name'"
+            )
+        )
+    ).mappings().one()
+    assert direction_schema == {
+        "is_nullable": "YES",
+        "udt_name": "varchar",
+    }
 
     schema = (
         await connection.execute(
@@ -893,6 +913,7 @@ async def _assert_legacy_data_at_head(
                     text(
                         "SELECT d.code AS direction_code, "
                         "d.name AS direction_name, "
+                        "d.short_name AS direction_short_name, "
                         "group_name.name AS group_name, "
                         "CAST(g.group_type AS VARCHAR) AS group_type, "
                         "g.trainer_id, r.weekday, r.start_time, r.end_time "
@@ -916,6 +937,7 @@ async def _assert_legacy_data_at_head(
             (
                 group["direction_code"],
                 group["direction_name"],
+                group["direction_short_name"],
                 group["group_name"],
                 group["group_type"],
                 group["weekday"],
@@ -927,6 +949,7 @@ async def _assert_legacy_data_at_head(
             (
                 "BOXING",
                 "Бокс",
+                None,
                 "Legacy group",
                 "REGULAR",
                 SUNDAY,
@@ -935,6 +958,7 @@ async def _assert_legacy_data_at_head(
             ),
             (
                 "LEGACY_MMA",
+                "MMA",
                 "MMA",
                 "Взрослые",
                 "REGULAR",

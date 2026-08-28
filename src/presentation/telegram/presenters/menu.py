@@ -42,18 +42,18 @@ _ROLE_PRESENTATIONS = (
         home_action_id="owner.home",
         selector_title="Владелец",
         panel_caption=(
-            "Управляйте спортсменами, Telegram-аккаунтами и ролями "
-            "пользователей."
+            "Меню владельца\n\nУправляйте спортсменами, Telegram-аккаунтами "
+            "и ролями пользователей."
         ),
-        banner=BannerContext.ADMIN_PANEL,
+        banner=BannerContext.OWNER_PANEL,
     ),
     _RolePresentation(
         role=RolePanel.ADMINISTRATOR,
         home_action_id="administrator.home",
         selector_title="Администратор",
         panel_caption=(
-            "Добавляйте спортсменов, связывайте их с Telegram и управляйте "
-            "ролями пользователей."
+            "Меню администратора\n\nДобавляйте спортсменов, связывайте их с "
+            "Telegram и управляйте ролями пользователей."
         ),
         banner=BannerContext.ADMIN_PANEL,
     ),

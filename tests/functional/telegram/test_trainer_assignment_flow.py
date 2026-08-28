@@ -398,14 +398,15 @@ async def open_confirmation(
     group_screen = last_screen(methods)
     group_buttons = callback_texts(group_screen)
     assert group_buttons[f"{SELECT_GROUP_PREFIX}{data.free_group_id}"] == (
-        "Кикбоксинг · Взрослые — ПН/СР/ПТ 19:00"
+        "K1 · Взрослые — ПН/СР/ПТ 19:00"
     )
     assert group_buttons[
         f"{SELECT_GROUP_PREFIX}{data.duplicate_group_id}"
-    ] == "Кикбоксинг · Взрослые — ВТ/ЧТ/СБ 08:30"
+    ] == "K1 · Взрослые — ВТ/ЧТ/СБ 08:30"
     assert group_buttons[
         f"{SELECT_GROUP_PREFIX}{data.assigned_group_id}"
-    ].startswith("✓ Кикбоксинг · Девушки")
+    ] == "✓ K1 · Девушки — ВТ/ЧТ 10:00"
+    assert group_screen.text == "Назначение тренера\n\nВыберите группу:"
 
     await dispatcher.feed_update(
         bot,

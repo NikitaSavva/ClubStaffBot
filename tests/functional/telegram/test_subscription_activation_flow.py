@@ -345,9 +345,16 @@ async def open_confirmation(
     if choose_group:
         group_screen = last_screen(methods)
         assert "Выберите группу" in group_screen.text
-        assert f"{SELECT_GROUP_PREFIX}{data.group_id}" in callback_texts(
-            group_screen
+        group_buttons = callback_texts(group_screen)
+        assert group_buttons[f"{SELECT_GROUP_PREFIX}{data.group_id}"] == (
+            "K1 · Сборная · 16:00"
         )
+        assert "Кикбоксинг · Сборная\nПН–СБ 16:00–17:30" in (
+            group_screen.text
+        )
+        assert "ПН–СБ" not in group_buttons[
+            f"{SELECT_GROUP_PREFIX}{data.group_id}"
+        ]
         await dispatcher.feed_update(
             bot,
             callback_update(

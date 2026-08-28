@@ -1,6 +1,6 @@
 import argparse
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -24,6 +24,7 @@ class PhotoSender(Protocol):
 @dataclass(frozen=True, slots=True)
 class BannerPaths:
     admin_panel: Path
+    owner_panel: Path
     trainer_panel: Path
     athlete_panel: Path
     role_selector: Path
@@ -34,6 +35,11 @@ class BannerPaths:
                 "ADMIN_PANEL_BANNER_FILE_ID",
                 "Administrator panel banner",
                 self.admin_panel,
+            ),
+            (
+                "OWNER_PANEL_BANNER_FILE_ID",
+                "Owner panel banner",
+                self.owner_panel,
             ),
             (
                 "TRAINER_PANEL_BANNER_FILE_ID",
@@ -70,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to the administrator panel banner.",
     )
     parser.add_argument(
+        "--owner-panel",
+        required=True,
+        type=Path,
+        help="Path to the owner panel banner.",
+    )
+    parser.add_argument(
         "--trainer-panel",
         required=True,
         type=Path,
@@ -96,8 +108,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def validate_banner_paths(paths: BannerPaths) -> None:
-    missing_paths = [path for _, _, path in paths.uploads() if not path.is_file()]
+def validate_banner_paths(
+    paths: BannerPaths,
+    existing_file_ids: Mapping[str, str | None] | None = None,
+) -> None:
+    configured = existing_file_ids or {}
+    missing_paths = [
+        path
+        for env_name, _, path in paths.uploads()
+        if not configured.get(env_name) and not path.is_file()
+    ]
     if missing_paths:
         formatted_paths = ", ".join(str(path) for path in missing_paths)
         raise FileNotFoundError(f"Banner file not found: {formatted_paths}")
@@ -118,11 +138,17 @@ async def upload_banners(
     sender: PhotoSender,
     chat_id: int,
     paths: BannerPaths,
+    existing_file_ids: Mapping[str, str | None] | None = None,
 ) -> dict[str, str]:
-    validate_banner_paths(paths)
+    configured = existing_file_ids or {}
+    validate_banner_paths(paths, configured)
     file_ids: dict[str, str] = {}
 
     for env_name, caption, path in paths.uploads():
+        existing_file_id = configured.get(env_name)
+        if existing_file_id:
+            file_ids[env_name] = existing_file_id
+            continue
         message = await sender.send_photo(
             chat_id=chat_id,
             photo=FSInputFile(path),
@@ -145,6 +171,23 @@ async def run(
             bot,
             chat_id,
             paths,
+            existing_file_ids={
+                "ADMIN_PANEL_BANNER_FILE_ID": (
+                    settings.admin_panel_banner_file_id
+                ),
+                "OWNER_PANEL_BANNER_FILE_ID": (
+                    settings.owner_panel_banner_file_id
+                ),
+                "TRAINER_PANEL_BANNER_FILE_ID": (
+                    settings.trainer_panel_banner_file_id
+                ),
+                "ATHLETE_PANEL_BANNER_FILE_ID": (
+                    settings.athlete_panel_banner_file_id
+                ),
+                "ROLE_SELECTOR_BANNER_FILE_ID": (
+                    settings.role_selector_banner_file_id
+                ),
+            },
         )
     finally:
         await bot.session.close()
@@ -155,6 +198,7 @@ def main() -> None:
     args = parser.parse_args()
     paths = BannerPaths(
         admin_panel=args.admin_panel,
+        owner_panel=args.owner_panel,
         trainer_panel=args.trainer_panel,
         athlete_panel=args.athlete_panel,
         role_selector=args.role_selector,
