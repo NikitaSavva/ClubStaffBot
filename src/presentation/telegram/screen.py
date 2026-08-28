@@ -25,6 +25,7 @@ logger = structlog.get_logger()
 
 class BannerContext(StrEnum):
     ROLE_SELECTOR = "role_selector"
+    OWNER_PANEL = "owner_panel"
     ADMIN_PANEL = "admin_panel"
     TRAINER_PANEL = "trainer_panel"
     ATHLETE_PANEL = "athlete_panel"
@@ -38,6 +39,7 @@ class RenderMode(StrEnum):
 @dataclass(frozen=True, slots=True)
 class BannerFileIds:
     role_selector: str | None = None
+    owner_panel: str | None = None
     admin_panel: str | None = None
     trainer_panel: str | None = None
     athlete_panel: str | None = None
@@ -45,6 +47,7 @@ class BannerFileIds:
     def get(self, context: BannerContext) -> str | None:
         file_id = {
             BannerContext.ROLE_SELECTOR: self.role_selector,
+            BannerContext.OWNER_PANEL: self.owner_panel,
             BannerContext.ADMIN_PANEL: self.admin_panel,
             BannerContext.TRAINER_PANEL: self.trainer_panel,
             BannerContext.ATHLETE_PANEL: self.athlete_panel,

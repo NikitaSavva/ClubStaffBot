@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     club_timezone: str = Field(default="Europe/Moscow", min_length=1)
 
     telegram_bot_token: SecretStr = Field(min_length=1)
+    owner_panel_banner_file_id: str | None = None
     admin_panel_banner_file_id: str | None = None
     trainer_panel_banner_file_id: str | None = None
     athlete_panel_banner_file_id: str | None = None

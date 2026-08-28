@@ -5,12 +5,18 @@ from application.club import ScheduleRuleSummary, TrainingGroupSummary
 _WEEKDAY_LABELS = ("ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС")
 
 
-def format_training_group_label(group: TrainingGroupSummary) -> str:
-    schedule = format_schedule_summary(
-        group.schedule_rules,
-        include_end_time=False,
+def format_training_group_button_label(group: TrainingGroupSummary) -> str:
+    direction_name = group.direction_short_name or group.direction_name
+    start_time = min(
+        (rule.start_time for rule in group.schedule_rules),
+        default=None,
     )
-    return f"{group.direction_name} · {group.group_name} — {schedule}"
+    start_time_label = (
+        start_time.strftime("%H:%M")
+        if start_time is not None
+        else "время не задано"
+    )
+    return f"{direction_name} · {group.group_name} · {start_time_label}"
 
 
 def format_training_group_details(group: TrainingGroupSummary) -> str:
@@ -19,6 +25,15 @@ def format_training_group_details(group: TrainingGroupSummary) -> str:
         include_end_time=True,
     )
     return f"{group.direction_name} · {group.group_name}\n{schedule}"
+
+
+def format_training_group_selection_details(
+    groups: tuple[TrainingGroupSummary, ...],
+) -> str:
+    return "\n\n".join(
+        f"{index}. {format_training_group_details(group)}"
+        for index, group in enumerate(groups, start=1)
+    )
 
 
 def format_schedule_summary(

@@ -5,8 +5,9 @@ import pytest
 from application.club import ScheduleRuleSummary, TrainingGroupSummary
 from domain.club import TrainingGroupType
 from presentation.telegram.presenters.training_groups import (
+    format_training_group_button_label,
     format_training_group_details,
-    format_training_group_label,
+    format_training_group_selection_details,
 )
 
 
@@ -17,10 +18,13 @@ def group(
     weekdays: tuple[int, ...],
     start_time: time,
     end_time: time,
+    direction_name: str = "Кикбоксинг",
+    direction_short_name: str | None = "K1",
 ) -> TrainingGroupSummary:
     return TrainingGroupSummary(
         training_group_id=group_id,
-        direction_name="Кикбоксинг",
+        direction_name=direction_name,
+        direction_short_name=direction_short_name,
         group_name=name,
         group_type=TrainingGroupType.REGULAR,
         schedule_rules=tuple(
@@ -35,34 +39,59 @@ def group(
     )
 
 
-@pytest.mark.parametrize("name", ["Взрослые", "Девушки"])
-def test_duplicate_group_names_have_distinct_composite_labels(
+@pytest.mark.parametrize(
+    (
+        "direction_name",
+        "direction_short_name",
+        "name",
+        "starts_at",
+        "expected",
+    ),
+    [
+        ("Кикбоксинг", "K1", "Взрослые", time(19), "K1 · Взрослые · 19:00"),
+        ("Кикбоксинг", "K1", "Взрослые", time(8, 30), "K1 · Взрослые · 08:30"),
+        ("Кикбоксинг", "K1", "Девушки", time(10), "K1 · Девушки · 10:00"),
+        ("Кикбоксинг", "K1", "Девушки", time(18, 45), "K1 · Девушки · 18:45"),
+        ("MMA", "MMA", "Взрослые", time(20), "MMA · Взрослые · 20:00"),
+    ],
+)
+def test_button_label_uses_compact_direction_group_and_start_time(
+    direction_name: str,
+    direction_short_name: str | None,
     name: str,
+    starts_at: time,
+    expected: str,
 ) -> None:
-    first = group(
+    training_group = group(
         group_id=1,
         name=name,
-        weekdays=(0, 2, 4),
-        start_time=time(19, 0),
-        end_time=time(20, 30),
-    )
-    second = group(
-        group_id=2,
-        name=name,
-        weekdays=(1, 3, 5),
-        start_time=time(8, 30),
-        end_time=time(10, 0),
+        weekdays=(0,),
+        start_time=starts_at,
+        end_time=time(21),
+        direction_name=direction_name,
+        direction_short_name=direction_short_name,
     )
 
-    first_label = format_training_group_label(first)
-    second_label = format_training_group_label(second)
-
-    assert first_label == f"Кикбоксинг · {name} — ПН/СР/ПТ 19:00"
-    assert second_label == f"Кикбоксинг · {name} — ВТ/ЧТ/СБ 08:30"
-    assert first_label != second_label
+    assert format_training_group_button_label(training_group) == expected
 
 
-def test_group_details_include_schedule_end_time() -> None:
+def test_button_label_falls_back_to_full_direction_name() -> None:
+    training_group = group(
+        group_id=1,
+        name="Взрослые",
+        weekdays=(0,),
+        start_time=time(18),
+        end_time=time(19),
+        direction_name="Бокс",
+        direction_short_name=None,
+    )
+
+    assert format_training_group_button_label(training_group) == (
+        "Бокс · Взрослые · 18:00"
+    )
+
+
+def test_group_details_include_full_name_weekdays_and_end_time() -> None:
     training_group = group(
         group_id=1,
         name="Взрослые",
@@ -76,7 +105,29 @@ def test_group_details_include_schedule_end_time() -> None:
     )
 
 
-def test_consecutive_club_days_are_compacted() -> None:
+def test_selection_details_keep_duplicate_names_distinct() -> None:
+    first = group(
+        group_id=1,
+        name="Взрослые",
+        weekdays=(0, 2, 4),
+        start_time=time(19),
+        end_time=time(20, 30),
+    )
+    second = group(
+        group_id=2,
+        name="Взрослые",
+        weekdays=(1, 3, 5),
+        start_time=time(8, 30),
+        end_time=time(10),
+    )
+
+    assert format_training_group_selection_details((first, second)) == (
+        "1. Кикбоксинг · Взрослые\nПН/СР/ПТ 19:00–20:30\n\n"
+        "2. Кикбоксинг · Взрослые\nВТ/ЧТ/СБ 08:30–10:00"
+    )
+
+
+def test_consecutive_club_days_are_compacted_in_full_details() -> None:
     training_group = group(
         group_id=1,
         name="Сборная",
@@ -85,6 +136,6 @@ def test_consecutive_club_days_are_compacted() -> None:
         end_time=time(17, 30),
     )
 
-    assert format_training_group_label(training_group) == (
-        "Кикбоксинг · Сборная — ПН–СБ 16:00"
+    assert format_training_group_details(training_group) == (
+        "Кикбоксинг · Сборная\nПН–СБ 16:00–17:30"
     )

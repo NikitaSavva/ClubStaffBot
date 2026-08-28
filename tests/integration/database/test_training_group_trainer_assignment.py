@@ -108,6 +108,7 @@ async def add_duplicate_name_groups(
     direction = SportDirectionModel(
         code=f"TEST_{suffix}",
         name=f"Кикбоксинг {suffix}",
+        short_name=f"K1-{suffix}",
         is_active=True,
     )
     name = GroupNameModel(name=f"Взрослые {suffix}")
@@ -199,6 +200,11 @@ async def test_reader_returns_duplicate_names_with_actual_schedule_rules(
 
     assert set(selected) == {first.id, second.id}
     assert selected[first.id].group_name == selected[second.id].group_name
+    assert selected[first.id].direction_short_name == (
+        selected[second.id].direction_short_name
+    )
+    assert selected[first.id].direction_short_name is not None
+    assert selected[first.id].direction_short_name.startswith("K1-")
     assert selected[first.id].schedule_rules != selected[second.id].schedule_rules
     assert [rule.weekday for rule in selected[first.id].schedule_rules] == [
         0,

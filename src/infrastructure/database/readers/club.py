@@ -23,6 +23,7 @@ from infrastructure.database.models import (
 class _TrainingGroupRow:
     training_group_id: int
     direction_name: str
+    direction_short_name: str | None
     group_name: str
     group_type: TrainingGroupType
     trainer: TrainerSummary | None
@@ -39,6 +40,7 @@ class SqlAlchemyTrainingGroupReader:
                 select(
                     TrainingGroupModel.id,
                     SportDirectionModel.name,
+                    SportDirectionModel.short_name,
                     GroupNameModel.name,
                     TrainingGroupModel.group_type,
                     ScheduleRuleModel.weekday,
@@ -82,12 +84,12 @@ class SqlAlchemyTrainingGroupReader:
         for row in rows:
             trainer = (
                 TrainerSummary(
-                    user_id=row[7],
-                    first_name=row[8],
-                    last_name=row[9],
-                    username=row[10],
+                    user_id=row[8],
+                    first_name=row[9],
+                    last_name=row[10],
+                    username=row[11],
                 )
-                if row[7] is not None
+                if row[8] is not None
                 else None
             )
             group = groups.setdefault(
@@ -95,15 +97,16 @@ class SqlAlchemyTrainingGroupReader:
                 _TrainingGroupRow(
                     training_group_id=row[0],
                     direction_name=row[1],
-                    group_name=row[2],
-                    group_type=TrainingGroupType(row[3]),
+                    direction_short_name=row[2],
+                    group_name=row[3],
+                    group_type=TrainingGroupType(row[4]),
                     trainer=trainer,
                     schedule_rules=[],
                 ),
             )
-            weekday: int | None = row[4]
-            start_time: time | None = row[5]
-            end_time: time | None = row[6]
+            weekday: int | None = row[5]
+            start_time: time | None = row[6]
+            end_time: time | None = row[7]
             if (
                 weekday is not None
                 and start_time is not None
@@ -121,6 +124,7 @@ class SqlAlchemyTrainingGroupReader:
             TrainingGroupSummary(
                 training_group_id=group.training_group_id,
                 direction_name=group.direction_name,
+                direction_short_name=group.direction_short_name,
                 group_name=group.group_name,
                 group_type=group.group_type,
                 schedule_rules=tuple(group.schedule_rules),

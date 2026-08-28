@@ -52,6 +52,7 @@ def make_renderer() -> tuple[TelegramScreenRenderer, AsyncMock]:
         bot=cast(Bot, bot_mock),
         banner_file_ids=BannerFileIds(
             role_selector="selector-file-id",
+            owner_panel="owner-file-id",
             admin_panel="admin-file-id",
             trainer_panel="trainer-file-id",
             athlete_panel="athlete-file-id",
@@ -149,6 +150,29 @@ async def test_text_to_media_sends_replacement_screen() -> None:
     bot.edit_message_media.assert_not_awaited()
     assert active.message_id == 11
     assert active.kind is UiMessageKind.MEDIA
+
+
+async def test_missing_owner_banner_renders_text_without_admin_fallback() -> None:
+    bot = AsyncMock(spec=Bot)
+    bot.send_message.return_value = bot_message(12)
+    renderer = TelegramScreenRenderer(
+        bot=cast(Bot, bot),
+        banner_file_ids=BannerFileIds(admin_panel="admin-file-id"),
+    )
+    state = make_state()
+
+    active = await renderer.render(
+        state=state,
+        chat_id=CHAT_ID,
+        screen=TelegramScreen(
+            text="Меню владельца",
+            banner=BannerContext.OWNER_PANEL,
+        ),
+    )
+
+    bot.send_message.assert_awaited_once()
+    bot.send_photo.assert_not_awaited()
+    assert active.kind is UiMessageKind.TEXT
 
 
 async def test_media_to_media_edits_caption_then_media() -> None:

@@ -8,6 +8,7 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
+    SendMessage,
     SendPhoto,
     TelegramMethod,
 )
@@ -132,10 +133,10 @@ async def add_user_with_roles(
         (
             SystemRoleCode.OWNER,
             (
-                "Управляйте спортсменами, Telegram-аккаунтами и ролями "
-                "пользователей."
+                "Меню владельца\n\nУправляйте спортсменами, "
+                "Telegram-аккаунтами и ролями пользователей."
             ),
-            "admin-banner-file-id",
+            "owner-banner-file-id",
             [
                 [
                     (
@@ -154,8 +155,9 @@ async def add_user_with_roles(
         (
             SystemRoleCode.ADMINISTRATOR,
             (
-                "Добавляйте спортсменов, связывайте их с Telegram и "
-                "управляйте ролями пользователей."
+                "Меню администратора\n\nДобавляйте спортсменов, "
+                "связывайте их с Telegram и управляйте ролями "
+                "пользователей."
             ),
             "admin-banner-file-id",
             [
@@ -241,6 +243,62 @@ async def test_start_opens_single_role_panel_without_back(
         for row in method.reply_markup.inline_keyboard
         for button in row
     )
+
+
+@pytest.mark.parametrize("command", ["/start", "/menu"])
+async def test_single_owner_without_banner_opens_text_only_owner_home(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    settings = integration_settings.model_copy(
+        update={"owner_panel_banner_file_id": None}
+    )
+    container = create_container(settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 6_500_000 + uuid4().int % 1_000_000_000
+    try:
+        await bootstrap_system_roles(container)
+        await add_user_with_roles(
+            container,
+            telegram_id=telegram_id,
+            role_codes=(SystemRoleCode.OWNER,),
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=1,
+                telegram_id=telegram_id,
+                text=command,
+            ),
+        )
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=telegram_id,
+            user_id=telegram_id,
+        )
+        ui_data = await dispatcher.storage.get_data(storage_key)
+    finally:
+        await container.close()
+
+    assert len(methods) == 1
+    assert isinstance(methods[0], SendMessage)
+    assert methods[0].text.startswith("Меню владельца")
+    assert not any(isinstance(method, SendPhoto) for method in methods)
+    assert ui_data["ui_context"]["navigation"]["active_role"] == "owner"
 
 
 async def test_multi_role_user_returns_from_panel_to_role_selector(
@@ -341,6 +399,102 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
     assert ui_data["ui_context"]["active_message"]["message_id"] == 6
 
 
+async def test_owner_and_administrator_keep_selected_presentation_role(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    telegram_id = 7_500_000 + uuid4().int % 1_000_000_000
+    select_owner = RolePanelCallback(role=RolePanel.OWNER).pack()
+    select_admin = RolePanelCallback(role=RolePanel.ADMINISTRATOR).pack()
+    back_to_selector = NavigationCallback(
+        action=NavigationAction.BACK,
+        target=NavigationTarget.ROLE_SELECTOR,
+    ).pack()
+    try:
+        await bootstrap_system_roles(container)
+        await add_user_with_roles(
+            container,
+            telegram_id=telegram_id,
+            role_codes=(
+                SystemRoleCode.OWNER,
+                SystemRoleCode.ADMINISTRATOR,
+            ),
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=telegram_id,
+            user_id=telegram_id,
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            command_update(update_id=1, telegram_id=telegram_id, text="/menu"),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=2,
+                telegram_id=telegram_id,
+                data=select_owner,
+                message_id=1,
+            ),
+        )
+        owner_data = await dispatcher.storage.get_data(storage_key)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                telegram_id=telegram_id,
+                data=back_to_selector,
+                message_id=3,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=4,
+                telegram_id=telegram_id,
+                data=select_admin,
+                message_id=5,
+            ),
+        )
+        admin_data = await dispatcher.storage.get_data(storage_key)
+    finally:
+        await container.close()
+
+    screens = [method for method in methods if isinstance(method, SendPhoto)]
+    assert [screen.photo for screen in screens] == [
+        "role-selector-banner-file-id",
+        "owner-banner-file-id",
+        "role-selector-banner-file-id",
+        "admin-banner-file-id",
+    ]
+    assert screens[1].caption is not None
+    assert screens[1].caption.startswith("Меню владельца")
+    assert screens[3].caption is not None
+    assert screens[3].caption.startswith("Меню администратора")
+    assert owner_data["ui_context"]["navigation"]["active_role"] == "owner"
+    assert (
+        admin_data["ui_context"]["navigation"]["active_role"]
+        == "administrator"
+    )
+
+
 @pytest.mark.parametrize("command", ["/start", "/menu", "/start stale-token"])
 @pytest.mark.parametrize(
     ("role_codes", "expected_caption", "expected_banner"),
@@ -348,10 +502,19 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
         (
             (SystemRoleCode.ADMINISTRATOR,),
             (
-                "Добавляйте спортсменов, связывайте их с Telegram и "
-                "управляйте ролями пользователей."
+                "Меню администратора\n\nДобавляйте спортсменов, "
+                "связывайте их с Telegram и управляйте ролями "
+                "пользователей."
             ),
             "admin-banner-file-id",
+        ),
+        (
+            (SystemRoleCode.OWNER,),
+            (
+                "Меню владельца\n\nУправляйте спортсменами, "
+                "Telegram-аккаунтами и ролями пользователей."
+            ),
+            "owner-banner-file-id",
         ),
         (
             (SystemRoleCode.ATHLETE, SystemRoleCode.TRAINER),

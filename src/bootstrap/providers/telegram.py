@@ -26,6 +26,7 @@ class TelegramProvider(Provider):
             bot=bot,
             banner_file_ids=BannerFileIds(
                 role_selector=settings.role_selector_banner_file_id,
+                owner_panel=settings.owner_panel_banner_file_id,
                 admin_panel=settings.admin_panel_banner_file_id,
                 trainer_panel=settings.trainer_panel_banner_file_id,
                 athlete_panel=settings.athlete_panel_banner_file_id,
