@@ -352,13 +352,26 @@ async def open_confirmation(
     )
     if choose_group:
         group_screen = last_screen(methods)
-        assert "Выберите группу" in group_screen.text
+        assert group_screen.text == (
+            "Выдача абонемента\n\n"
+            "Спортсмен:\nИван Иванов\n\n"
+            "Тариф:\n12 посещений — 6 000 ₽\n\n"
+            "Выберите группу:"
+        )
+        assert all(
+            detail not in group_screen.text
+            for detail in (
+                "Кикбоксинг",
+                "Сборная",
+                "ПН–СБ",
+                "16:00",
+                "17:30",
+                "1. ",
+            )
+        )
         group_buttons = callback_texts(group_screen)
         assert group_buttons[f"{SELECT_GROUP_PREFIX}{data.group_id}"] == (
             "K1 · Сборная · 16:00"
-        )
-        assert "Кикбоксинг · Сборная\nПН–СБ 16:00–17:30" in (
-            group_screen.text
         )
         assert "ПН–СБ" not in group_buttons[
             f"{SELECT_GROUP_PREFIX}{data.group_id}"

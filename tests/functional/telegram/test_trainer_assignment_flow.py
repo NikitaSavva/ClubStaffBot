@@ -407,6 +407,18 @@ async def open_confirmation(
         f"{SELECT_GROUP_PREFIX}{data.assigned_group_id}"
     ] == "✓ K1 · Девушки — ВТ/ЧТ 10:00"
     assert group_screen.text == "Назначение тренера\n\nВыберите группу:"
+    assert all(
+        detail not in group_screen.text
+        for detail in (
+            "Кикбоксинг",
+            "Взрослые",
+            "Девушки",
+            "ПН/СР/ПТ",
+            "19:00",
+            "20:30",
+            "1. ",
+        )
+    )
 
     await dispatcher.feed_update(
         bot,

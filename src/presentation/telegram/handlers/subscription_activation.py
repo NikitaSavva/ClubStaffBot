@@ -58,7 +58,6 @@ from presentation.telegram.presenters.athletes import format_athlete_label
 from presentation.telegram.presenters.training_groups import (
     format_training_group_button_label,
     format_training_group_details,
-    format_training_group_selection_details,
 )
 from presentation.telegram.screen import (
     BannerContext,
@@ -743,8 +742,7 @@ async def _show_groups(
     text = (
         f"{TITLE}\n\nСпортсмен:\n{athlete.full_name}\n\n"
         f"Тариф:\n{format_subscription_plan_label(plan)}\n\n"
-        "Выберите группу:\n\n"
-        f"{format_training_group_selection_details(applicable)}"
+        "Выберите группу:"
         if applicable
         else (
             f"{TITLE}\n\nСпортсмен:\n{athlete.full_name}\n\n"
