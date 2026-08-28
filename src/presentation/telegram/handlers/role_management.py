@@ -213,7 +213,6 @@ async def handle_begin_user_search(
     state: FSMContext,
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -257,7 +256,6 @@ async def handle_cancel_role_management_callback(
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -337,7 +335,6 @@ async def handle_select_bot_user(
     interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -375,7 +372,6 @@ async def handle_back_to_users_list(
     interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -418,7 +414,6 @@ async def handle_begin_role_assignment(
     interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -464,7 +459,6 @@ async def handle_begin_role_removal(
     interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -522,7 +516,6 @@ async def handle_back_to_user_profile(
     interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -563,7 +556,6 @@ async def handle_assign_user_role(
     interactor: FromDishka[AssignUserRoleInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -644,7 +636,6 @@ async def handle_remove_user_role(
     search_interactor: FromDishka[SearchBotUsersInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return

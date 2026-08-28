@@ -160,7 +160,6 @@ async def handle_begin_trainer_assignment(
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -184,7 +183,6 @@ async def handle_select_training_group(
     trainers_interactor: FromDishka[ListTrainerCandidatesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -235,7 +233,6 @@ async def handle_select_trainer(
     trainers_interactor: FromDishka[ListTrainerCandidatesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return
@@ -288,7 +285,6 @@ async def handle_confirm_trainer_assignment(
     assign_interactor: FromDishka[AssignTrainingGroupTrainerInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -379,7 +375,6 @@ async def handle_back_to_training_groups(
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -402,7 +397,6 @@ async def handle_back_to_trainer_candidates(
     trainers_interactor: FromDishka[ListTrainerCandidatesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -442,7 +436,6 @@ async def handle_cancel_trainer_assignment_callback(
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
