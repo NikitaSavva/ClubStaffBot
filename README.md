@@ -78,11 +78,15 @@ Upload Telegram role banners once and print their reusable `file_id` values:
 ```bash
 PYTHONPATH=src python -m scripts.upload_telegram_banners \
   --admin-panel <path> \
+  --owner-panel <path> \
   --trainer-panel <path> \
   --athlete-panel <path> \
   --role-selector <path> \
   --chat-id <telegram_chat_id>
 ```
+
+The command reuses configured `*_BANNER_FILE_ID` values and uploads only
+banners whose file ID is absent from the current settings.
 
 ## Production run
 
