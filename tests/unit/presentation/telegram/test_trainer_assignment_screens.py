@@ -61,6 +61,7 @@ def training_group(
     group_id: int,
     name: str,
     starts_at: time,
+    weekdays: tuple[int, ...],
     trainer: TrainerSummary | None = None,
 ) -> TrainingGroupSummary:
     return TrainingGroupSummary(
@@ -69,18 +70,19 @@ def training_group(
         direction_short_name="K1",
         group_name=name,
         group_type=TrainingGroupType.REGULAR,
-        schedule_rules=(
+        schedule_rules=tuple(
             ScheduleRuleSummary(
-                weekday=0,
+                weekday=weekday,
                 start_time=starts_at,
                 end_time=time(21),
-            ),
+            )
+            for weekday in weekdays
         ),
         trainer=trainer,
     )
 
 
-def test_group_buttons_are_compact_distinct_and_keep_assignment_state() -> None:
+def test_group_buttons_use_short_direction_and_keep_existing_semantics() -> None:
     assigned_trainer = TrainerSummary(
         user_id=7,
         first_name="Иван",
@@ -88,17 +90,29 @@ def test_group_buttons_are_compact_distinct_and_keep_assignment_state() -> None:
         username=None,
     )
     groups = (
-        training_group(group_id=1, name="Взрослые", starts_at=time(19)),
+        training_group(
+            group_id=1,
+            name="Взрослые",
+            starts_at=time(19),
+            weekdays=(0, 2, 4),
+        ),
         training_group(
             group_id=2,
             name="Взрослые",
             starts_at=time(8, 30),
+            weekdays=(1, 3, 5),
         ),
-        training_group(group_id=3, name="Девушки", starts_at=time(10)),
+        training_group(
+            group_id=3,
+            name="Девушки",
+            starts_at=time(10),
+            weekdays=(1, 3),
+        ),
         training_group(
             group_id=4,
             name="Девушки",
             starts_at=time(18, 45),
+            weekdays=(1, 3, 5),
             trainer=assigned_trainer,
         ),
     )
@@ -111,8 +125,15 @@ def test_group_buttons_are_compact_distinct_and_keep_assignment_state() -> None:
         if button.callback_data is not None
     }
 
-    assert labels[f"{SELECT_GROUP_PREFIX}1"] == "K1 · Взрослые · 19:00"
-    assert labels[f"{SELECT_GROUP_PREFIX}2"] == "K1 · Взрослые · 08:30"
-    assert labels[f"{SELECT_GROUP_PREFIX}3"] == "K1 · Девушки · 10:00"
-    assert labels[f"{SELECT_GROUP_PREFIX}4"] == "✓ K1 · Девушки · 18:45"
-    assert all("ПН" not in label and "21:00" not in label for label in labels.values())
+    assert labels[f"{SELECT_GROUP_PREFIX}1"] == (
+        "K1 · Взрослые — ПН/СР/ПТ 19:00"
+    )
+    assert labels[f"{SELECT_GROUP_PREFIX}2"] == (
+        "K1 · Взрослые — ВТ/ЧТ/СБ 08:30"
+    )
+    assert labels[f"{SELECT_GROUP_PREFIX}3"] == (
+        "K1 · Девушки — ВТ/ЧТ 10:00"
+    )
+    assert labels[f"{SELECT_GROUP_PREFIX}4"] == (
+        "✓ K1 · Девушки — ВТ/ЧТ/СБ 18:45"
+    )

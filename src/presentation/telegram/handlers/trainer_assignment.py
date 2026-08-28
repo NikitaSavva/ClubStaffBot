@@ -40,9 +40,8 @@ from presentation.telegram.navigation import (
     build_menu_button,
 )
 from presentation.telegram.presenters.training_groups import (
-    format_training_group_button_label,
     format_training_group_details,
-    format_training_group_selection_details,
+    format_training_group_label,
 )
 from presentation.telegram.screen import (
     BannerContext,
@@ -83,9 +82,9 @@ def build_group_selection_keyboard(
         (
             build_callback_button(
                 text=(
-                    f"✓ {format_training_group_button_label(group)}"
+                    f"✓ {format_training_group_label(group)}"
                     if group.trainer is not None
-                    else format_training_group_button_label(group)
+                    else format_training_group_label(group)
                 ),
                 callback_data=(
                     f"{SELECT_GROUP_PREFIX}{group.training_group_id}"
@@ -554,12 +553,7 @@ async def _show_groups(
         message=message,
         state=state,
         renderer=renderer,
-        text=(
-            f"{SELECT_GROUP_TEXT}\n\n"
-            f"{format_training_group_selection_details(groups)}"
-            if groups
-            else NO_GROUPS_TEXT
-        ),
+        text=SELECT_GROUP_TEXT if groups else NO_GROUPS_TEXT,
         reply_markup=build_group_selection_keyboard(groups),
         mode=mode,
     )

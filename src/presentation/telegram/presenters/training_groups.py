@@ -5,6 +5,15 @@ from application.club import ScheduleRuleSummary, TrainingGroupSummary
 _WEEKDAY_LABELS = ("ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС")
 
 
+def format_training_group_label(group: TrainingGroupSummary) -> str:
+    direction_name = group.direction_short_name or group.direction_name
+    schedule = format_schedule_summary(
+        group.schedule_rules,
+        include_end_time=False,
+    )
+    return f"{direction_name} · {group.group_name} — {schedule}"
+
+
 def format_training_group_button_label(group: TrainingGroupSummary) -> str:
     direction_name = group.direction_short_name or group.direction_name
     start_time = min(
