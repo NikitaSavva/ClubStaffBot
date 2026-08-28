@@ -2,11 +2,14 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageCaption,
@@ -26,6 +29,7 @@ from aiogram.types import (
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from application.subscriptions import ActivateSubscriptionInteractor
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from bootstrap.startup import bootstrap_system_roles
@@ -59,6 +63,10 @@ from presentation.telegram.navigation import (
 from tests.functional.telegram.fakes import telegram_method_result
 
 NOW = datetime(2026, 8, 26, 12, tzinfo=UTC)
+EXPIRED_CALLBACK_QUERY_ERROR = (
+    "Bad Request: query is too old and response timeout expired or query ID "
+    "is invalid"
+)
 BOT_USER = User(
     id=123456789,
     is_bot=True,
@@ -445,6 +453,107 @@ async def test_specific_group_activation_flow_for_administrator_and_owner(
         assert subscription.group_id == data.group_id
         assert subscription.remaining_visits == 12
         assert len(audits) == 1
+    finally:
+        if session_factory is not None and data is not None:
+            await cleanup_flow_data(session_factory, data)
+        await container.close()
+
+
+async def test_expired_confirmation_does_not_call_activation_interactor(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+    expired_callback_id = "callback-6"
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        if (
+            isinstance(method, AnswerCallbackQuery)
+            and method.callback_query_id == expired_callback_id
+        ):
+            raise TelegramBadRequest(
+                method=method,
+                message=EXPIRED_CALLBACK_QUERY_ERROR,
+            )
+        return telegram_method_result(method, message_id=len(methods))
+
+    activation_call = AsyncMock()
+    monkeypatch.setattr(
+        ActivateSubscriptionInteractor,
+        "__call__",
+        activation_call,
+    )
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    session_factory: async_sessionmaker[AsyncSession] | None = None
+    data: FlowData | None = None
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        data = await arrange_flow_data(
+            session_factory,
+            administrative_role=SystemRoleCode.ADMINISTRATOR,
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        confirmation_id = await open_confirmation(
+            dispatcher=dispatcher,
+            bot=bot,
+            methods=methods,
+            data=data,
+            plan_id=data.specific_plan_id,
+            choose_group=True,
+        )
+        storage_key = StorageKey(
+            bot_id=bot.id,
+            chat_id=data.actor.id,
+            user_id=data.actor.id,
+        )
+        state_before = await dispatcher.storage.get_state(storage_key)
+        state_data_before = await dispatcher.storage.get_data(storage_key)
+        confirmation_offset = len(methods)
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=6,
+                sender=data.actor,
+                data=CONFIRM_ACTIVATION_ACTION,
+                message_id=confirmation_id,
+            ),
+        )
+
+        activation_call.assert_not_awaited()
+        confirmation_methods = methods[confirmation_offset:]
+        assert len(confirmation_methods) == 1
+        assert isinstance(confirmation_methods[0], AnswerCallbackQuery)
+        assert await dispatcher.storage.get_state(storage_key) == state_before
+        assert (
+            await dispatcher.storage.get_data(storage_key)
+            == state_data_before
+        )
+        async with session_factory() as session:
+            subscription_count = await session.scalar(
+                select(func.count(SubscriptionModel.id)).where(
+                    SubscriptionModel.athlete_id == data.athlete_id
+                )
+            )
+            audit_count = await session.scalar(
+                select(func.count(AuditLogModel.id)).where(
+                    AuditLogModel.action == "SUBSCRIPTION_ACTIVATED",
+                    AuditLogModel.actor_user_id == data.actor_user_id,
+                )
+            )
+        assert subscription_count == 0
+        assert audit_count == 0
     finally:
         if session_factory is not None and data is not None:
             await cleanup_flow_data(session_factory, data)

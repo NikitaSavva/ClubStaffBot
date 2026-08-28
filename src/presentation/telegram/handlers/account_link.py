@@ -86,7 +86,6 @@ async def handle_list_unlinked_athletes(
     interactor: FromDishka[ListUnlinkedAthletesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -148,7 +147,6 @@ async def handle_create_athlete_account_link_invite(
     interactor: FromDishka[CreateAthleteAccountLinkInviteInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message) or callback.data is None:
         return

@@ -17,6 +17,7 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from application.identity import GetUserMenuContextInteractor
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from bootstrap.startup import bootstrap_system_roles
@@ -307,6 +308,8 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
 ) -> None:
     container = create_container(integration_settings)
     methods: list[TelegramMethod[Any]] = []
+    callback_order: list[str] = []
+    record_callback_order = False
 
     async def fake_bot_call(
         bot: Bot,
@@ -315,8 +318,25 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
     ) -> Any:
         del bot, request_timeout
         methods.append(method)
+        if record_callback_order and isinstance(method, AnswerCallbackQuery):
+            callback_order.append("ack")
         return telegram_method_result(method, message_id=len(methods))
 
+    original_menu_call = GetUserMenuContextInteractor.__call__
+
+    async def tracked_menu_call(
+        interactor: GetUserMenuContextInteractor,
+        query: Any,
+    ) -> Any:
+        if record_callback_order:
+            callback_order.append("interactor")
+        return await original_menu_call(interactor, query)
+
+    monkeypatch.setattr(
+        GetUserMenuContextInteractor,
+        "__call__",
+        tracked_menu_call,
+    )
     monkeypatch.setattr(Bot, "__call__", fake_bot_call)
     telegram_id = 7_000_000 + uuid4().int % 1_000_000_000
     select_admin = RolePanelCallback(role=RolePanel.ADMINISTRATOR).pack()
@@ -356,6 +376,7 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
                 message_id=1,
             ),
         )
+        record_callback_order = True
         await dispatcher.feed_update(
             bot,
             callback_update(
@@ -393,6 +414,7 @@ async def test_multi_role_user_returns_from_panel_to_role_selector(
     assert sends[1].reply_markup is not None
     assert len(answers) == 3
     assert answers[1].text == STALE_SCREEN_TEXT
+    assert callback_order == ["ack", "interactor"]
     positions = {id(method): index for index, method in enumerate(methods)}
     assert positions[id(answers[0])] < positions[id(sends[1])]
     assert positions[id(answers[2])] < positions[id(sends[2])]

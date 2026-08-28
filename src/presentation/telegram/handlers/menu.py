@@ -286,7 +286,6 @@ async def handle_select_role_panel(
     interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -311,7 +310,6 @@ async def handle_back_to_role_selector(
     interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -335,7 +333,6 @@ async def handle_back_to_role_panel(
     interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -359,7 +356,6 @@ async def handle_legacy_back_to_menu(
     interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return

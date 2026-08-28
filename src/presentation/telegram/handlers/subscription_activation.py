@@ -187,7 +187,6 @@ async def handle_begin_subscription_activation(
     athletes_interactor: FromDishka[ListAthletesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -211,7 +210,6 @@ async def handle_select_subscription_athlete(
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     athlete_id = _parse_id(callback.data, SELECT_ATHLETE_PREFIX)
     if not isinstance(message, Message) or athlete_id is None:
@@ -254,7 +252,6 @@ async def handle_select_subscription_plan(
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     plan_id = _parse_id(callback.data, SELECT_PLAN_PREFIX)
     if not isinstance(message, Message) or plan_id is None:
@@ -305,7 +302,6 @@ async def handle_select_subscription_group(
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     group_id = _parse_id(callback.data, SELECT_GROUP_PREFIX)
     if not isinstance(message, Message) or group_id is None:
@@ -357,7 +353,6 @@ async def handle_confirm_subscription_activation(
     activate_interactor: FromDishka[ActivateSubscriptionInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -463,7 +458,6 @@ async def handle_back_to_subscription_athletes(
     athletes_interactor: FromDishka[ListAthletesInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -485,7 +479,6 @@ async def handle_back_to_subscription_plans(
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -518,7 +511,6 @@ async def handle_back_to_subscription_groups(
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
@@ -558,7 +550,6 @@ async def handle_cancel_subscription_activation_callback(
     menu_interactor: FromDishka[GetUserMenuContextInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
-    await callback.answer()
     message = callback.message
     if not isinstance(message, Message):
         return
