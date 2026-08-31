@@ -36,15 +36,6 @@ def format_training_group_details(group: TrainingGroupSummary) -> str:
     return f"{group.direction_name} · {group.group_name}\n{schedule}"
 
 
-def format_training_group_selection_details(
-    groups: tuple[TrainingGroupSummary, ...],
-) -> str:
-    return "\n\n".join(
-        f"{index}. {format_training_group_details(group)}"
-        for index, group in enumerate(groups, start=1)
-    )
-
-
 def format_schedule_summary(
     rules: tuple[ScheduleRuleSummary, ...],
     *,

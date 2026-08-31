@@ -8,7 +8,6 @@ from presentation.telegram.presenters.training_groups import (
     format_training_group_button_label,
     format_training_group_details,
     format_training_group_label,
-    format_training_group_selection_details,
 )
 
 
@@ -141,28 +140,6 @@ def test_group_details_include_full_name_weekdays_and_end_time() -> None:
 
     assert format_training_group_details(training_group) == (
         "Кикбоксинг · Взрослые\nПН/СР/ПТ 19:00–20:30"
-    )
-
-
-def test_selection_details_keep_duplicate_names_distinct() -> None:
-    first = group(
-        group_id=1,
-        name="Взрослые",
-        weekdays=(0, 2, 4),
-        start_time=time(19),
-        end_time=time(20, 30),
-    )
-    second = group(
-        group_id=2,
-        name="Взрослые",
-        weekdays=(1, 3, 5),
-        start_time=time(8, 30),
-        end_time=time(10),
-    )
-
-    assert format_training_group_selection_details((first, second)) == (
-        "1. Кикбоксинг · Взрослые\nПН/СР/ПТ 19:00–20:30\n\n"
-        "2. Кикбоксинг · Взрослые\nВТ/ЧТ/СБ 08:30–10:00"
     )
 
 
