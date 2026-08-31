@@ -12,6 +12,10 @@ _ROLE_ORDER = (
 
 _ADMINISTRATIVE_MENU_ITEMS = (
     MenuItem(
+        action_id="administrator.schedule",
+        title="Расписание",
+    ),
+    MenuItem(
         action_id="administrator.activate_subscription",
         title="Выдать абонемент",
     ),
@@ -53,11 +57,19 @@ _ROLE_MENU_ITEMS = {
             action_id="trainer.home",
             title="Меню тренера",
         ),
+        MenuItem(
+            action_id="trainer.schedule",
+            title="Расписание",
+        ),
     ),
     SystemRoleCode.ATHLETE: (
         MenuItem(
             action_id="athlete.home",
             title="Меню спортсмена",
+        ),
+        MenuItem(
+            action_id="athlete.schedule",
+            title="Расписание",
         ),
         MenuItem(
             action_id="athlete.my_subscription",

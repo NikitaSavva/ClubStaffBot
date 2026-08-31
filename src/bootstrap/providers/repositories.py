@@ -19,12 +19,14 @@ from application.subscriptions import (
     SubscriptionRepository,
 )
 from application.training_sessions import (
+    CurrentWeekScheduleReader,
     ScheduleRuleRepository,
     TrainingSessionRepository,
 )
 from infrastructure.database.readers import (
     SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemyCurrentWeekScheduleReader,
     SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
@@ -45,6 +47,13 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_current_week_schedule_reader(
+        self,
+        session: AsyncSession,
+    ) -> CurrentWeekScheduleReader:
+        return SqlAlchemyCurrentWeekScheduleReader(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_my_subscription_reader(
         self,

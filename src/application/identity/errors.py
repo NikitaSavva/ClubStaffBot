@@ -29,6 +29,10 @@ class AthletePermissionRequiredError(ApplicationError):
     """The use case requires the ATHLETE system role."""
 
 
+class TrainerPermissionRequiredError(ApplicationError):
+    """The use case requires the TRAINER system role."""
+
+
 class LastUserRoleRemovalForbiddenError(ApplicationError):
     """A User must retain at least one active system role."""
 

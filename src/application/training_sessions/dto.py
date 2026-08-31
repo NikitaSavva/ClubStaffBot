@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
-from domain.club import TrainingSessionStatus
+from domain.club import TrainingGroupType, TrainingSessionStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,3 +57,35 @@ class GenerateTrainingSessionsResult:
     date_to: date
     created_count: int
     skipped_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleSessionItem:
+    id: int
+    training_group_id: int
+    starts_at: datetime
+    ends_at: datetime
+    status: TrainingSessionStatus
+    sport_direction_name: str
+    group_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleWeek:
+    week_start: datetime
+    week_end: datetime
+    sessions: tuple[ScheduleSessionItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GetCurrentWeekScheduleResult:
+    schedule: ScheduleWeek | None
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentWeekScheduleFilters:
+    week_start: datetime
+    week_end: datetime
+    training_group_id: int | None = None
+    trainer_id: int | None = None
+    group_type: TrainingGroupType | None = None

@@ -49,7 +49,9 @@ from application.subscriptions import (
     SubscriptionRepository,
 )
 from application.training_sessions import (
+    CurrentWeekScheduleReader,
     GenerateTrainingSessionsInteractor,
+    GetCurrentWeekScheduleInteractor,
     ScheduleRuleRepository,
     TrainingSessionGenerationWindowResolver,
     TrainingSessionRepository,
@@ -59,6 +61,7 @@ from bootstrap.container import create_container
 from infrastructure.database.readers import (
     SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemyCurrentWeekScheduleReader,
     SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
@@ -138,6 +141,9 @@ async def test_container_resolves_app_and_request_dependencies(
             training_session_repository = await request_container.get(
                 TrainingSessionRepository
             )
+            current_week_schedule_reader = await request_container.get(
+                CurrentWeekScheduleReader
+            )
             subscription_plan_reader = await request_container.get(
                 SubscriptionPlanReader
             )
@@ -210,6 +216,9 @@ async def test_container_resolves_app_and_request_dependencies(
             generation_interactor = await request_container.get(
                 GenerateTrainingSessionsInteractor
             )
+            schedule_interactor = await request_container.get(
+                GetCurrentWeekScheduleInteractor
+            )
             generation_window_resolver = await request_container.get(
                 TrainingSessionGenerationWindowResolver
             )
@@ -236,6 +245,10 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 training_session_repository,
                 SqlAlchemyTrainingSessionRepository,
+            )
+            assert isinstance(
+                current_week_schedule_reader,
+                SqlAlchemyCurrentWeekScheduleReader,
             )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(
@@ -319,6 +332,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 GenerateTrainingSessionsInteractor,
             )
             assert isinstance(
+                schedule_interactor,
+                GetCurrentWeekScheduleInteractor,
+            )
+            assert isinstance(
                 generation_window_resolver,
                 TrainingSessionGenerationWindowResolver,
             )
@@ -333,6 +350,7 @@ async def test_container_resolves_app_and_request_dependencies(
             assert training_group_repository._session is first_session
             assert schedule_rule_repository._session is first_session
             assert training_session_repository._session is first_session
+            assert current_week_schedule_reader._session is first_session
             assert audit_repository._session is first_session
             assert subscription_plan_reader._session is first_session
             assert my_subscription_reader._session is first_session
@@ -354,6 +372,12 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             assert get_my_subscription_interactor._reader is (
                 my_subscription_reader
+            )
+            assert schedule_interactor._subscriptions is (
+                my_subscription_reader
+            )
+            assert schedule_interactor._schedule is (
+                current_week_schedule_reader
             )
             assert (
                 create_manual_athlete_interactor._athletes
