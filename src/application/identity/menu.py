@@ -59,6 +59,10 @@ _ROLE_MENU_ITEMS = {
             action_id="athlete.home",
             title="Меню спортсмена",
         ),
+        MenuItem(
+            action_id="athlete.my_subscription",
+            title="Мой абонемент",
+        ),
     ),
 }
 

@@ -3,8 +3,14 @@ from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from application.club.errors import TrainingGroupNotFoundError
 from application.club.ports import TrainingGroupRepository
 from application.common import Clock, UnitOfWork
-from application.identity.authorization import require_administrative_actor
-from application.identity.errors import AthleteNotFoundError
+from application.identity.authorization import (
+    require_administrative_actor,
+    require_athlete_actor,
+)
+from application.identity.errors import (
+    AthleteNotFoundError,
+    AthleteProfileNotFoundError,
+)
 from application.identity.ports import (
     AthleteRepository,
     AuditLogRepository,
@@ -14,6 +20,8 @@ from application.identity.ports import (
 from application.subscriptions.commands import ActivateSubscriptionCommand
 from application.subscriptions.dto import (
     ActivateSubscriptionResult,
+    GetMySubscriptionResult,
+    MySubscriptionDetails,
     SubscriptionPlanSummary,
 )
 from application.subscriptions.errors import (
@@ -24,13 +32,20 @@ from application.subscriptions.errors import (
     SubscriptionPlanNotApplicableToGroupError,
     SubscriptionPlanNotFoundError,
 )
-from application.subscriptions.lifecycle import expire_if_elapsed
+from application.subscriptions.lifecycle import (
+    expire_if_elapsed,
+    resolve_effective_active_subscription,
+)
 from application.subscriptions.ports import (
+    MySubscriptionReader,
     SubscriptionPlanReader,
     SubscriptionPlanRepository,
     SubscriptionRepository,
 )
-from application.subscriptions.queries import ListActiveSubscriptionPlansQuery
+from application.subscriptions.queries import (
+    GetMySubscriptionQuery,
+    ListActiveSubscriptionPlansQuery,
+)
 from domain.subscriptions import (
     Subscription,
     SubscriptionAccessScope,
@@ -62,6 +77,57 @@ class ListActiveSubscriptionPlansInteractor:
             roles=self._roles,
         )
         return await self._reader.list_active()
+
+
+class GetMySubscriptionInteractor:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        reader: MySubscriptionReader,
+        clock: Clock,
+    ) -> None:
+        self._users = user_repository
+        self._roles = role_repository
+        self._reader = reader
+        self._clock = clock
+
+    async def __call__(
+        self,
+        query: GetMySubscriptionQuery,
+    ) -> GetMySubscriptionResult:
+        actor = await require_athlete_actor(
+            telegram_id=query.actor_telegram_id,
+            users=self._users,
+            roles=self._roles,
+        )
+        if actor.id is None:
+            raise RuntimeError("A persisted User must have an id")
+
+        read_model = await self._reader.get_by_user_id(actor.id)
+        if read_model is None:
+            raise AthleteProfileNotFoundError
+
+        reference_now = self._clock.now()
+        persisted = read_model.persisted_active
+        effective = resolve_effective_active_subscription(
+            persisted.subscription if persisted is not None else None,
+            reference_now,
+        )
+        if effective is None or persisted is None:
+            return GetMySubscriptionResult(current=None)
+
+        return GetMySubscriptionResult(
+            current=MySubscriptionDetails(
+                plan_name=persisted.plan_name,
+                is_unlimited=persisted.is_unlimited,
+                access_scope=persisted.access_scope,
+                group=persisted.group,
+                starts_at=effective.starts_at,
+                expires_at=effective.expires_at,
+                remaining_visits=effective.remaining_visits,
+            )
+        )
 
 
 class ActivateSubscriptionInteractor:

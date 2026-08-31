@@ -184,9 +184,9 @@ async def add_user_with_roles(
         ),
         (
             SystemRoleCode.ATHLETE,
-            "Для спортсмена пока нет доступных действий.",
+            "Просматривайте информацию о своем абонементе.",
             "athlete-banner-file-id",
-            [],
+            [[("Мой абонемент", "athlete.my_subscription")]],
         ),
     ],
 )

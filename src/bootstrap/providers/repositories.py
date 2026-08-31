@@ -13,6 +13,7 @@ from application.identity.ports import (
     UserRepository,
 )
 from application.subscriptions import (
+    MySubscriptionReader,
     SubscriptionPlanReader,
     SubscriptionPlanRepository,
     SubscriptionRepository,
@@ -24,6 +25,7 @@ from application.training_sessions import (
 from infrastructure.database.readers import (
     SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
 )
@@ -43,6 +45,13 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_my_subscription_reader(
+        self,
+        session: AsyncSession,
+    ) -> MySubscriptionReader:
+        return SqlAlchemyMySubscriptionReader(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_subscription_plan_reader(
         self,

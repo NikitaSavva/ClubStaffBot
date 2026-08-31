@@ -2,6 +2,7 @@ from collections.abc import Iterable
 
 from application.identity.errors import (
     AdministratorPermissionRequiredError,
+    AthletePermissionRequiredError,
     UserNotFoundError,
 )
 from application.identity.ports import RoleRepository, UserRepository
@@ -32,4 +33,20 @@ async def require_administrative_actor(
     role_codes = await roles.list_active_codes_for_user(actor.id)
     if not can_administrate(role_codes):
         raise AdministratorPermissionRequiredError
+    return actor
+
+
+async def require_athlete_actor(
+    *,
+    telegram_id: int,
+    users: UserRepository,
+    roles: RoleRepository,
+) -> User:
+    actor = await users.get_by_telegram_id(telegram_id)
+    if actor is None or actor.id is None:
+        raise UserNotFoundError
+
+    role_codes = await roles.list_active_codes_for_user(actor.id)
+    if SystemRoleCode.ATHLETE not in role_codes:
+        raise AthletePermissionRequiredError
     return actor

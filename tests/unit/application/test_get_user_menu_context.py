@@ -140,6 +140,10 @@ def build_interactor(
                     action_id="athlete.home",
                     title="Меню спортсмена",
                 ),
+                MenuItem(
+                    action_id="athlete.my_subscription",
+                    title="Мой абонемент",
+                ),
             ),
         ),
         (
@@ -189,6 +193,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "administrator.manage_users",
         "trainer.home",
         "athlete.home",
+        "athlete.my_subscription",
     ]
 
 

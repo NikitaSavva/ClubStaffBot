@@ -1,6 +1,9 @@
 from typing import Protocol
 
-from application.subscriptions.dto import SubscriptionPlanSummary
+from application.subscriptions.dto import (
+    AthleteSubscriptionReadModel,
+    SubscriptionPlanSummary,
+)
 from domain.subscriptions import Subscription, SubscriptionPlan
 
 
@@ -24,3 +27,10 @@ class SubscriptionRepository(Protocol):
 
 class SubscriptionPlanReader(Protocol):
     async def list_active(self) -> tuple[SubscriptionPlanSummary, ...]: ...
+
+
+class MySubscriptionReader(Protocol):
+    async def get_by_user_id(
+        self,
+        user_id: int,
+    ) -> AthleteSubscriptionReadModel | None: ...
