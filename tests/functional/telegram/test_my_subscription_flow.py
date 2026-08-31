@@ -600,7 +600,9 @@ async def test_multi_role_return_and_stale_home_callback(
             ),
         )
         home = last_screen(methods)
-        assert home.text == "Просматривайте информацию о своем абонементе."
+        assert home.text == (
+            "Просматривайте свое расписание и информацию об абонементе."
+        )
         assert MY_SUBSCRIPTION_ACTION in callback_texts(home)
     finally:
         if data is not None:

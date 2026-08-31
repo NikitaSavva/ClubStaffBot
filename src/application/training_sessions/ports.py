@@ -2,8 +2,10 @@ from datetime import date
 from typing import Protocol
 
 from application.training_sessions.dto import (
+    CurrentWeekScheduleFilters,
     NewTrainingSession,
     ScheduleRuleForGeneration,
+    ScheduleSessionItem,
 )
 
 
@@ -21,3 +23,10 @@ class TrainingSessionRepository(Protocol):
         self,
         training_sessions: tuple[NewTrainingSession, ...],
     ) -> int: ...
+
+
+class CurrentWeekScheduleReader(Protocol):
+    async def list(
+        self,
+        filters: CurrentWeekScheduleFilters,
+    ) -> tuple[ScheduleSessionItem, ...]: ...

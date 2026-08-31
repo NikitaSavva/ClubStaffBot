@@ -61,14 +61,16 @@ _ROLE_PRESENTATIONS = (
         role=RolePanel.TRAINER,
         home_action_id="trainer.home",
         selector_title="Тренер",
-        panel_caption="Для тренера пока нет доступных действий.",
+        panel_caption="Просматривайте свое расписание тренировок.",
         banner=BannerContext.TRAINER_PANEL,
     ),
     _RolePresentation(
         role=RolePanel.ATHLETE,
         home_action_id="athlete.home",
         selector_title="Спортсмен",
-        panel_caption="Просматривайте информацию о своем абонементе.",
+        panel_caption=(
+            "Просматривайте свое расписание и информацию об абонементе."
+        ),
         banner=BannerContext.ATHLETE_PANEL,
     ),
 )
@@ -121,6 +123,9 @@ def build_role_panel_screen(
     }
     rows: list[tuple[InlineKeyboardButton, ...]] = []
     if role in (RolePanel.OWNER, RolePanel.ADMINISTRATOR):
+        schedule = items.get("administrator.schedule")
+        if schedule is not None:
+            rows.append((_menu_item_button(schedule),))
         activate_subscription = items.get(
             "administrator.activate_subscription"
         )
@@ -142,7 +147,14 @@ def build_role_panel_screen(
         )
         if related:
             rows.append(related)
+    if role is RolePanel.TRAINER:
+        schedule = items.get("trainer.schedule")
+        if schedule is not None:
+            rows.append((_menu_item_button(schedule),))
     if role is RolePanel.ATHLETE:
+        schedule = items.get("athlete.schedule")
+        if schedule is not None:
+            rows.append((_menu_item_button(schedule),))
         my_subscription = items.get("athlete.my_subscription")
         if my_subscription is not None:
             rows.append((_menu_item_button(my_subscription),))

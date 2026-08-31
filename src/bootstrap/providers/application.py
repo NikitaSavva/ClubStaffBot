@@ -50,7 +50,9 @@ from application.subscriptions import (
     SubscriptionRepository,
 )
 from application.training_sessions import (
+    CurrentWeekScheduleReader,
     GenerateTrainingSessionsInteractor,
+    GetCurrentWeekScheduleInteractor,
     ScheduleRuleRepository,
     TrainingSessionGenerationWindowResolver,
     TrainingSessionRepository,
@@ -58,6 +60,25 @@ from application.training_sessions import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_get_current_week_schedule_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        subscription_reader: MySubscriptionReader,
+        schedule_reader: CurrentWeekScheduleReader,
+        clock: Clock,
+        club_timezone: ZoneInfo,
+    ) -> GetCurrentWeekScheduleInteractor:
+        return GetCurrentWeekScheduleInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            subscription_reader=subscription_reader,
+            schedule_reader=schedule_reader,
+            clock=clock,
+            club_timezone=club_timezone,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_get_my_subscription_interactor(
         self,

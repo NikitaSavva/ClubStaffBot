@@ -83,6 +83,10 @@ def build_interactor(
                         title="Меню владельца",
                     ),
                     MenuItem(
+                        action_id="administrator.schedule",
+                        title="Расписание",
+                    ),
+                    MenuItem(
                         action_id="administrator.activate_subscription",
                         title="Выдать абонемент",
                     ),
@@ -110,6 +114,10 @@ def build_interactor(
                     MenuItem(
                         action_id="administrator.home",
                         title="Меню администратора",
+                    ),
+                    MenuItem(
+                        action_id="administrator.schedule",
+                        title="Расписание",
                     ),
                     MenuItem(
                         action_id="administrator.activate_subscription",
@@ -141,6 +149,10 @@ def build_interactor(
                     title="Меню спортсмена",
                 ),
                 MenuItem(
+                    action_id="athlete.schedule",
+                    title="Расписание",
+                ),
+                MenuItem(
                     action_id="athlete.my_subscription",
                     title="Мой абонемент",
                 ),
@@ -152,6 +164,10 @@ def build_interactor(
                 MenuItem(
                     action_id="trainer.home",
                     title="Меню тренера",
+                ),
+                MenuItem(
+                    action_id="trainer.schedule",
+                    title="Расписание",
                 ),
             ),
         ),
@@ -186,13 +202,16 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
 
     assert [item.action_id for item in result.items] == [
         "administrator.home",
+        "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
         "administrator.assign_trainer",
         "administrator.manage_users",
         "trainer.home",
+        "trainer.schedule",
         "athlete.home",
+        "athlete.schedule",
         "athlete.my_subscription",
     ]
 
@@ -209,6 +228,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
 
     assert [item.action_id for item in result.items] == [
         "owner.home",
+        "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",

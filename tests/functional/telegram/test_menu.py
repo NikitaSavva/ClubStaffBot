@@ -139,6 +139,7 @@ async def add_user_with_roles(
             ),
             "owner-banner-file-id",
             [
+                [("Расписание", "administrator.schedule")],
                 [
                     (
                         "Выдать абонемент",
@@ -162,6 +163,7 @@ async def add_user_with_roles(
             ),
             "admin-banner-file-id",
             [
+                [("Расписание", "administrator.schedule")],
                 [
                     (
                         "Выдать абонемент",
@@ -178,15 +180,18 @@ async def add_user_with_roles(
         ),
         (
             SystemRoleCode.TRAINER,
-            "Для тренера пока нет доступных действий.",
+            "Просматривайте свое расписание тренировок.",
             "trainer-banner-file-id",
-            [],
+            [[("Расписание", "trainer.schedule")]],
         ),
         (
             SystemRoleCode.ATHLETE,
-            "Просматривайте информацию о своем абонементе.",
+            "Просматривайте свое расписание и информацию об абонементе.",
             "athlete-banner-file-id",
-            [[("Мой абонемент", "athlete.my_subscription")]],
+            [
+                [("Расписание", "athlete.schedule")],
+                [("Мой абонемент", "athlete.my_subscription")],
+            ],
         ),
     ],
 )
