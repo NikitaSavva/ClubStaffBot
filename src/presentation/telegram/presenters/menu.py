@@ -68,7 +68,7 @@ _ROLE_PRESENTATIONS = (
         role=RolePanel.ATHLETE,
         home_action_id="athlete.home",
         selector_title="Спортсмен",
-        panel_caption="Для спортсмена пока нет доступных действий.",
+        panel_caption="Просматривайте информацию о своем абонементе.",
         banner=BannerContext.ATHLETE_PANEL,
     ),
 )
@@ -142,6 +142,10 @@ def build_role_panel_screen(
         )
         if related:
             rows.append(related)
+    if role is RolePanel.ATHLETE:
+        my_subscription = items.get("athlete.my_subscription")
+        if my_subscription is not None:
+            rows.append((_menu_item_button(my_subscription),))
     if show_role_selector_back:
         rows.append((build_back_button(NavigationTarget.ROLE_SELECTOR),))
 

@@ -25,12 +25,20 @@ class AdministratorPermissionRequiredError(ApplicationError):
     """The use case requires administrative access."""
 
 
+class AthletePermissionRequiredError(ApplicationError):
+    """The use case requires the ATHLETE system role."""
+
+
 class LastUserRoleRemovalForbiddenError(ApplicationError):
     """A User must retain at least one active system role."""
 
 
 class AthleteNotFoundError(ApplicationError):
     """The requested Athlete does not exist."""
+
+
+class AthleteProfileNotFoundError(ApplicationError):
+    """The current User has no linked Athlete profile."""
 
 
 class AthleteAlreadyLinkedError(ApplicationError):

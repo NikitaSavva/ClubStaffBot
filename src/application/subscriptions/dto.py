@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from domain.club import TrainingGroupType
-from domain.subscriptions import SubscriptionAccessScope
+from domain.subscriptions import Subscription, SubscriptionAccessScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,3 +28,41 @@ class ActivateSubscriptionResult:
     starts_at: datetime
     expires_at: datetime
     remaining_visits: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class MySubscriptionGroup:
+    training_group_id: int
+    direction_name: str
+    group_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedActiveSubscriptionReadModel:
+    subscription: Subscription
+    plan_name: str
+    is_unlimited: bool
+    access_scope: SubscriptionAccessScope
+    group: MySubscriptionGroup | None
+
+
+@dataclass(frozen=True, slots=True)
+class AthleteSubscriptionReadModel:
+    athlete_id: int
+    persisted_active: PersistedActiveSubscriptionReadModel | None
+
+
+@dataclass(frozen=True, slots=True)
+class MySubscriptionDetails:
+    plan_name: str
+    is_unlimited: bool
+    access_scope: SubscriptionAccessScope
+    group: MySubscriptionGroup | None
+    starts_at: datetime
+    expires_at: datetime
+    remaining_visits: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class GetMySubscriptionResult:
+    current: MySubscriptionDetails | None

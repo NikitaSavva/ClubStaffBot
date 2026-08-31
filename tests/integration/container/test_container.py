@@ -41,7 +41,9 @@ from application.identity.ports import (
 )
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
+    GetMySubscriptionInteractor,
     ListActiveSubscriptionPlansInteractor,
+    MySubscriptionReader,
     SubscriptionPlanReader,
     SubscriptionPlanRepository,
     SubscriptionRepository,
@@ -57,6 +59,7 @@ from bootstrap.container import create_container
 from infrastructure.database.readers import (
     SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
+    SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
 )
@@ -138,6 +141,9 @@ async def test_container_resolves_app_and_request_dependencies(
             subscription_plan_reader = await request_container.get(
                 SubscriptionPlanReader
             )
+            my_subscription_reader = await request_container.get(
+                MySubscriptionReader
+            )
             subscription_plan_repository = await request_container.get(
                 SubscriptionPlanRepository
             )
@@ -162,6 +168,9 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             activate_subscription_interactor = await request_container.get(
                 ActivateSubscriptionInteractor
+            )
+            get_my_subscription_interactor = await request_container.get(
+                GetMySubscriptionInteractor
             )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
@@ -234,6 +243,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 SqlAlchemySubscriptionPlanReader,
             )
             assert isinstance(
+                my_subscription_reader,
+                SqlAlchemyMySubscriptionReader,
+            )
+            assert isinstance(
                 subscription_plan_repository,
                 SqlAlchemySubscriptionPlanRepository,
             )
@@ -258,6 +271,10 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 activate_subscription_interactor,
                 ActivateSubscriptionInteractor,
+            )
+            assert isinstance(
+                get_my_subscription_interactor,
+                GetMySubscriptionInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(
@@ -318,6 +335,7 @@ async def test_container_resolves_app_and_request_dependencies(
             assert training_session_repository._session is first_session
             assert audit_repository._session is first_session
             assert subscription_plan_reader._session is first_session
+            assert my_subscription_reader._session is first_session
             assert subscription_plan_repository._session is first_session
             assert subscription_repository._session is first_session
             assert unit_of_work._session is first_session
@@ -333,6 +351,9 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             assert activate_subscription_interactor._plans is (
                 subscription_plan_repository
+            )
+            assert get_my_subscription_interactor._reader is (
+                my_subscription_reader
             )
             assert (
                 create_manual_athlete_interactor._athletes

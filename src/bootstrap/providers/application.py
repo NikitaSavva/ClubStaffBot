@@ -42,7 +42,9 @@ from application.identity.role_management import (
 )
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
+    GetMySubscriptionInteractor,
     ListActiveSubscriptionPlansInteractor,
+    MySubscriptionReader,
     SubscriptionPlanReader,
     SubscriptionPlanRepository,
     SubscriptionRepository,
@@ -56,6 +58,21 @@ from application.training_sessions import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_get_my_subscription_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        reader: MySubscriptionReader,
+        clock: Clock,
+    ) -> GetMySubscriptionInteractor:
+        return GetMySubscriptionInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            reader=reader,
+            clock=clock,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_list_athletes_interactor(
         self,
