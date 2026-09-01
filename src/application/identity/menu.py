@@ -68,6 +68,10 @@ _ROLE_MENU_ITEMS = {
             title="Меню спортсмена",
         ),
         MenuItem(
+            action_id="athlete.my_qr",
+            title="Мой QR",
+        ),
+        MenuItem(
             action_id="athlete.schedule",
             title="Расписание",
         ),

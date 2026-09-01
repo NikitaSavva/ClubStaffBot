@@ -69,7 +69,8 @@ _ROLE_PRESENTATIONS = (
         home_action_id="athlete.home",
         selector_title="Спортсмен",
         panel_caption=(
-            "Просматривайте свое расписание и информацию об абонементе."
+            "Показывайте свой QR-код, просматривайте расписание и "
+            "информацию об абонементе."
         ),
         banner=BannerContext.ATHLETE_PANEL,
     ),
@@ -152,6 +153,9 @@ def build_role_panel_screen(
         if schedule is not None:
             rows.append((_menu_item_button(schedule),))
     if role is RolePanel.ATHLETE:
+        my_qr = items.get("athlete.my_qr")
+        if my_qr is not None:
+            rows.append((_menu_item_button(my_qr),))
         schedule = items.get("athlete.schedule")
         if schedule is not None:
             rows.append((_menu_item_button(schedule),))

@@ -180,6 +180,7 @@ def test_athlete_panel_shows_my_subscription_action() -> None:
     context = MenuContext(
         items=(
             MenuItem(action_id="athlete.home", title="Меню спортсмена"),
+            MenuItem(action_id="athlete.my_qr", title="Мой QR"),
             MenuItem(action_id="athlete.schedule", title="Расписание"),
             MenuItem(
                 action_id="athlete.my_subscription",
@@ -195,6 +196,6 @@ def test_athlete_panel_shows_my_subscription_action() -> None:
     )
 
     assert screen.reply_markup is not None
-    assert screen.reply_markup.inline_keyboard[1][0].callback_data == (
+    assert screen.reply_markup.inline_keyboard[2][0].callback_data == (
         "athlete.my_subscription"
     )

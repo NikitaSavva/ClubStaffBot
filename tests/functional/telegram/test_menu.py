@@ -186,10 +186,12 @@ async def add_user_with_roles(
         ),
         (
             SystemRoleCode.ATHLETE,
-            "Просматривайте свое расписание и информацию об абонементе.",
-            "athlete-banner-file-id",
-            [
-                [("Расписание", "athlete.schedule")],
+            "Показывайте свой QR-код, просматривайте расписание и "
+            "информацию об абонементе.",
+                "athlete-banner-file-id",
+                [
+                    [("Мой QR", "athlete.my_qr")],
+                    [("Расписание", "athlete.schedule")],
                 [("Мой абонемент", "athlete.my_subscription")],
             ],
         ),

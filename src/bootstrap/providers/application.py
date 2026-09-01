@@ -2,6 +2,10 @@ from zoneinfo import ZoneInfo
 
 from dishka import Provider, Scope, provide
 
+from application.athlete_qr import (
+    AthleteQrTokenCodec,
+    GetAthleteQrTokenInteractor,
+)
 from application.athletes import (
     AthleteReader,
     CreateManualAthleteInteractor,
@@ -60,6 +64,21 @@ from application.training_sessions import (
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_get_athlete_qr_token_interactor(
+        self,
+        user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
+        role_repository: RoleRepository,
+        token_codec: AthleteQrTokenCodec,
+    ) -> GetAthleteQrTokenInteractor:
+        return GetAthleteQrTokenInteractor(
+            user_repository=user_repository,
+            athlete_repository=athlete_repository,
+            role_repository=role_repository,
+            token_codec=token_codec,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_get_current_week_schedule_interactor(
         self,
