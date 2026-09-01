@@ -36,6 +36,12 @@ class SqlAlchemyAthleteRepository:
         await self._session.flush()
         return model.id
 
+    async def get_by_user_id(self, user_id: int) -> Athlete | None:
+        model = await self._session.scalar(
+            select(AthleteModel).where(AthleteModel.user_id == user_id)
+        )
+        return _to_athlete(model)
+
     async def get_by_id_for_update(
         self,
         athlete_id: int,

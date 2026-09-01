@@ -149,6 +149,10 @@ def build_interactor(
                     title="Меню спортсмена",
                 ),
                 MenuItem(
+                    action_id="athlete.my_qr",
+                    title="Мой QR",
+                ),
+                MenuItem(
                     action_id="athlete.schedule",
                     title="Расписание",
                 ),
@@ -211,6 +215,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "trainer.home",
         "trainer.schedule",
         "athlete.home",
+        "athlete.my_qr",
         "athlete.schedule",
         "athlete.my_subscription",
     ]

@@ -5,6 +5,10 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from application.athlete_qr import (
+    AthleteQrTokenCodec,
+    GetAthleteQrTokenInteractor,
+)
 from application.athletes import (
     AthleteReader,
     CreateManualAthleteInteractor,
@@ -58,6 +62,7 @@ from application.training_sessions import (
 )
 from bootstrap.config import Settings
 from bootstrap.container import create_container
+from infrastructure.athlete_qr import ItsDangerousAthleteQrTokenCodec
 from infrastructure.database.readers import (
     SqlAlchemyAthleteReader,
     SqlAlchemyBotUserReader,
@@ -94,6 +99,7 @@ def settings() -> Settings:
         redis_port=6379,
         redis_db=0,
         telegram_bot_token="123456789:test-token",
+        athlete_qr_signing_secret="s" * 32,
         admin_panel_banner_file_id="admin-banner-file-id",
         trainer_panel_banner_file_id="trainer-banner-file-id",
         athlete_panel_banner_file_id="athlete-banner-file-id",
@@ -116,6 +122,7 @@ async def test_container_resolves_app_and_request_dependencies(
         session_factory = await container.get(async_sessionmaker[AsyncSession])
         redis = await container.get(Redis)
         screen_renderer = await container.get(TelegramScreenRenderer)
+        athlete_qr_token_codec = await container.get(AthleteQrTokenCodec)
 
         async with container() as request_container:
             first_session = await request_container.get(AsyncSession)
@@ -177,6 +184,9 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             get_my_subscription_interactor = await request_container.get(
                 GetMySubscriptionInteractor
+            )
+            get_athlete_qr_token_interactor = await request_container.get(
+                GetAthleteQrTokenInteractor
             )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
@@ -288,6 +298,10 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 get_my_subscription_interactor,
                 GetMySubscriptionInteractor,
+            )
+            assert isinstance(
+                get_athlete_qr_token_interactor,
+                GetAthleteQrTokenInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(
@@ -426,6 +440,10 @@ async def test_container_resolves_app_and_request_dependencies(
         await container.close()
 
         assert resolved_settings is settings
+        assert isinstance(
+            athlete_qr_token_codec,
+            ItsDangerousAthleteQrTokenCodec,
+        )
         assert session_factory.kw["bind"] is engine
         assert redis.connection_pool.connection_kwargs["host"] == "cache"
         assert screen_renderer._bot.id == 123456789

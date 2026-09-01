@@ -2,9 +2,11 @@ from zoneinfo import ZoneInfo
 
 from dishka import Provider, Scope, provide
 
+from application.athlete_qr import AthleteQrTokenCodec
 from application.common import Clock
 from application.identity.ports import InviteTokenGenerator, InviteTokenHasher
 from bootstrap.config import Settings
+from infrastructure.athlete_qr import ItsDangerousAthleteQrTokenCodec
 from infrastructure.clock import SystemClock
 from infrastructure.security import (
     SecretsInviteTokenGenerator,
@@ -13,6 +15,16 @@ from infrastructure.security import (
 
 
 class InfrastructureProvider(Provider):
+    @provide(scope=Scope.APP)
+    def provide_athlete_qr_token_codec(
+        self,
+        settings: Settings,
+    ) -> AthleteQrTokenCodec:
+        return ItsDangerousAthleteQrTokenCodec(
+            secret=settings.athlete_qr_signing_secret.get_secret_value(),
+            ttl_seconds=settings.athlete_qr_ttl_seconds,
+        )
+
     @provide(scope=Scope.APP)
     def provide_clock(self) -> Clock:
         return SystemClock()

@@ -27,6 +27,8 @@ class BotUserReader(Protocol):
 class AthleteRepository(Protocol):
     async def add(self, athlete: Athlete) -> int: ...
 
+    async def get_by_user_id(self, user_id: int) -> Athlete | None: ...
+
     async def get_by_id_for_update(
         self,
         athlete_id: int,
