@@ -2,6 +2,10 @@ from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.athletes import AthleteReader
+from application.attendance import (
+    AttendanceRepository,
+    AttendanceSessionRepository,
+)
 from application.club import TrainingGroupReader, TrainingGroupRepository
 from application.common import UnitOfWork
 from application.identity.ports import (
@@ -33,6 +37,8 @@ from infrastructure.database.readers import (
 )
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
+    SqlAlchemyAttendanceRepository,
+    SqlAlchemyAttendanceSessionRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
@@ -47,6 +53,20 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_attendance_repository(
+        self,
+        session: AsyncSession,
+    ) -> AttendanceRepository:
+        return SqlAlchemyAttendanceRepository(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_attendance_session_repository(
+        self,
+        session: AsyncSession,
+    ) -> AttendanceSessionRepository:
+        return SqlAlchemyAttendanceSessionRepository(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_current_week_schedule_reader(
         self,

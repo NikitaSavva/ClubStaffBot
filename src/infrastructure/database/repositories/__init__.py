@@ -18,6 +18,8 @@ from infrastructure.database.repositories.training_sessions import (
 )
 
 __all__ = [
+    "SqlAlchemyAttendanceRepository",
+    "SqlAlchemyAttendanceSessionRepository",
     "SqlAlchemyAthleteRepository",
     "SqlAlchemyAuditLogRepository",
     "SqlAlchemyBotInviteRepository",
@@ -29,3 +31,7 @@ __all__ = [
     "SqlAlchemyTrainingSessionRepository",
     "SqlAlchemyUserRepository",
 ]
+from infrastructure.database.repositories.attendance import (
+    SqlAlchemyAttendanceRepository,
+    SqlAlchemyAttendanceSessionRepository,
+)

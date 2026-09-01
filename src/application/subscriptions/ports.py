@@ -4,7 +4,11 @@ from application.subscriptions.dto import (
     AthleteSubscriptionReadModel,
     SubscriptionPlanSummary,
 )
-from domain.subscriptions import Subscription, SubscriptionPlan
+from domain.subscriptions import (
+    Subscription,
+    SubscriptionPlan,
+    SubscriptionStatus,
+)
 
 
 class SubscriptionPlanRepository(Protocol):
@@ -20,7 +24,21 @@ class SubscriptionRepository(Protocol):
         athlete_id: int,
     ) -> Subscription | None: ...
 
+    async def get_active_by_athlete_for_update(
+        self,
+        athlete_id: int,
+    ) -> Subscription | None: ...
+
     async def mark_expired(self, subscription_id: int) -> bool: ...
+
+    async def update_attendance_state(
+        self,
+        *,
+        subscription_id: int,
+        expected_remaining_visits: int,
+        remaining_visits: int,
+        status: SubscriptionStatus,
+    ) -> bool: ...
 
     async def add(self, subscription: Subscription) -> int: ...
 

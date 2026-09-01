@@ -45,6 +45,20 @@ class SqlAlchemySubscriptionRepository:
         )
         return _to_subscription(model)
 
+    async def get_active_by_athlete_for_update(
+        self,
+        athlete_id: int,
+    ) -> Subscription | None:
+        model = await self._session.scalar(
+            select(SubscriptionModel)
+            .where(
+                SubscriptionModel.athlete_id == athlete_id,
+                SubscriptionModel.status == SubscriptionStatus.ACTIVE,
+            )
+            .with_for_update()
+        )
+        return _to_subscription(model)
+
     async def mark_expired(self, subscription_id: int) -> bool:
         expired_id = await self._session.scalar(
             update(SubscriptionModel)
@@ -56,6 +70,30 @@ class SqlAlchemySubscriptionRepository:
             .returning(SubscriptionModel.id)
         )
         return expired_id is not None
+
+    async def update_attendance_state(
+        self,
+        *,
+        subscription_id: int,
+        expected_remaining_visits: int,
+        remaining_visits: int,
+        status: SubscriptionStatus,
+    ) -> bool:
+        updated_id = await self._session.scalar(
+            update(SubscriptionModel)
+            .where(
+                SubscriptionModel.id == subscription_id,
+                SubscriptionModel.status == SubscriptionStatus.ACTIVE,
+                SubscriptionModel.remaining_visits
+                == expected_remaining_visits,
+            )
+            .values(
+                remaining_visits=remaining_visits,
+                status=status,
+            )
+            .returning(SubscriptionModel.id)
+        )
+        return updated_id is not None
 
     async def add(self, subscription: Subscription) -> int:
         model = SubscriptionModel(

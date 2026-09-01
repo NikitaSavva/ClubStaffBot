@@ -14,7 +14,7 @@
       <header class="app-header">
         <p class="eyebrow">STAFF CONTROL</p>
         <h1>Сканер QR</h1>
-        <p class="subtitle">Отсканируйте QR спортсмена для идентификации.</p>
+        <p class="subtitle">Отсканируйте QR спортсмена, чтобы отметить посещение.</p>
       </header>
 
       <section class="state-card" aria-live="polite">
@@ -32,16 +32,34 @@
         <div id="loading-state" class="state-panel" hidden>
           <div class="spinner" aria-hidden="true"></div>
           <h2>Проверяем QR…</h2>
-          <p>Подтверждаем код и данные спортсмена.</p>
+          <p>Проверяем абонемент и сегодняшнюю тренировку.</p>
+        </div>
+
+        <div id="selection-state" class="state-panel state-panel--wide" hidden>
+          <p class="status-label">ВЫБЕРИТЕ ТРЕНИРОВКУ</p>
+          <h2 id="selection-athlete-name"></h2>
+          <p id="selection-athlete-birth-date" class="athlete-meta"></p>
+          <div id="session-list" class="session-list" role="radiogroup" aria-label="Тренировки на сегодня"></div>
+          <p id="no-selectable-sessions" class="empty-note" hidden>
+            Сегодня нет доступных тренировок для отметки посещения.
+          </p>
         </div>
 
         <div id="success-state" class="state-panel" hidden>
           <div class="status-icon status-icon--success" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="m7.2 12.3 3.1 3.1 6.5-7"/></svg>
           </div>
-          <p class="status-label">QR распознан</p>
+          <p class="status-label">ПОСЕЩЕНИЕ ОТМЕЧЕНО</p>
           <h2 id="athlete-name"></h2>
           <p id="athlete-birth-date" class="athlete-meta"></p>
+          <div class="result-session">
+            <strong id="success-session-name"></strong>
+            <span id="success-session-time"></span>
+          </div>
+          <p id="remaining-visits" class="remaining-visits"></p>
+          <p id="last-visit-note" class="last-visit-note" hidden>
+            Это было последнее посещение по абонементу. Для следующей тренировки необходимо выдать новый абонемент.
+          </p>
         </div>
 
         <div id="message-state" class="state-panel" hidden>
@@ -50,6 +68,11 @@
           </div>
           <h2 id="message-title">Не удалось проверить QR</h2>
           <p id="message-text"></p>
+          <div id="message-context" class="result-session" hidden>
+            <strong id="message-athlete-name"></strong>
+            <span id="message-session-name"></span>
+            <span id="message-session-time"></span>
+          </div>
         </div>
       </section>
 

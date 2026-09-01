@@ -54,6 +54,17 @@ class SqlAlchemyAthleteRepository:
         )
         return _to_athlete(model)
 
+    async def get_by_public_id_for_update(
+        self,
+        athlete_public_id: UUID,
+    ) -> Athlete | None:
+        model = await self._session.scalar(
+            select(AthleteModel)
+            .where(AthleteModel.athlete_public_id == athlete_public_id)
+            .with_for_update()
+        )
+        return _to_athlete(model)
+
     async def get_by_id_for_update(
         self,
         athlete_id: int,
