@@ -1,13 +1,20 @@
 from sqlalchemy.exc import IntegrityError
 
+from application.attendance.errors import AttendanceAlreadyExistsError
 from application.subscriptions.errors import (
     ActiveSubscriptionAlreadyExistsError,
 )
 
 ACTIVE_SUBSCRIPTION_CONSTRAINT = "uq_subscriptions_active_athlete_id"
+ATTENDANCE_CONSTRAINT = "uq_attendances_training_session_id"
 
 
 def translate_integrity_error(error: IntegrityError) -> BaseException:
+    if (
+        getattr(error.orig, "sqlstate", None) == "23505"
+        and _constraint_name(error) == ATTENDANCE_CONSTRAINT
+    ):
+        return AttendanceAlreadyExistsError()
     if (
         getattr(error.orig, "sqlstate", None) == "23505"
         and _constraint_name(error) == ACTIVE_SUBSCRIPTION_CONSTRAINT

@@ -35,11 +35,17 @@ def test_scanner_webapp_and_static_assets_are_served() -> None:
     assert "https://telegram.org/js/telegram-web-app.js" in html.text
     assert "showScanQrPopup" in javascript.text
     assert "closeScanQrPopup" in javascript.text
+    assert "/api/webapp/scanner/attendance" in javascript.text
+    assert "session_selection_required" in javascript.text
+    assert "training_session_id" in javascript.text
+    assert "Отметить посещение" in javascript.text
     assert "textContent" in javascript.text
     assert "innerHTML" not in javascript.text
     assert "getUserMedia" not in javascript.text
     assert "navigator.mediaDevices" not in javascript.text
     assert "jsQR" not in javascript.text
+    assert "localStorage" not in javascript.text
+    assert "sessionStorage" not in javascript.text
     assert "127.0.0.1" in javascript.text
     assert "isLocalPreview" in javascript.text
 

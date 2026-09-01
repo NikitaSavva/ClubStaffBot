@@ -14,6 +14,11 @@ from application.athletes import (
     CreateManualAthleteInteractor,
     ListAthletesInteractor,
 )
+from application.attendance import (
+    AttendanceRepository,
+    AttendanceSessionRepository,
+    ConfirmAttendanceInteractor,
+)
 from application.club import (
     AssignTrainingGroupTrainerInteractor,
     ListTrainerCandidatesInteractor,
@@ -44,7 +49,7 @@ from application.identity.ports import (
     UserRepository,
 )
 from application.scanner import (
-    ResolveAthleteQrInteractor,
+    ConfirmAttendanceByQrInteractor,
     TelegramWebAppInitDataVerifier,
 )
 from application.subscriptions import (
@@ -77,6 +82,8 @@ from infrastructure.database.readers import (
 )
 from infrastructure.database.repositories import (
     SqlAlchemyAthleteRepository,
+    SqlAlchemyAttendanceRepository,
+    SqlAlchemyAttendanceSessionRepository,
     SqlAlchemyAuditLogRepository,
     SqlAlchemyBotInviteRepository,
     SqlAlchemyRoleRepository,
@@ -177,6 +184,12 @@ async def test_container_resolves_app_and_request_dependencies(
             audit_repository = await request_container.get(
                 AuditLogRepository
             )
+            attendance_repository = await request_container.get(
+                AttendanceRepository
+            )
+            attendance_session_repository = await request_container.get(
+                AttendanceSessionRepository
+            )
             unit_of_work = await request_container.get(UnitOfWork)
             registration_interactor = await request_container.get(
                 RegisterBotUserInteractor
@@ -199,8 +212,11 @@ async def test_container_resolves_app_and_request_dependencies(
             get_athlete_qr_token_interactor = await request_container.get(
                 GetAthleteQrTokenInteractor
             )
-            resolve_athlete_qr_interactor = await request_container.get(
-                ResolveAthleteQrInteractor
+            confirm_attendance_interactor = await request_container.get(
+                ConfirmAttendanceInteractor
+            )
+            confirm_attendance_by_qr_interactor = await request_container.get(
+                ConfirmAttendanceByQrInteractor
             )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
@@ -276,6 +292,14 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(
+                attendance_repository,
+                SqlAlchemyAttendanceRepository,
+            )
+            assert isinstance(
+                attendance_session_repository,
+                SqlAlchemyAttendanceSessionRepository,
+            )
+            assert isinstance(
                 subscription_plan_reader,
                 SqlAlchemySubscriptionPlanReader,
             )
@@ -318,8 +342,12 @@ async def test_container_resolves_app_and_request_dependencies(
                 GetAthleteQrTokenInteractor,
             )
             assert isinstance(
-                resolve_athlete_qr_interactor,
-                ResolveAthleteQrInteractor,
+                confirm_attendance_interactor,
+                ConfirmAttendanceInteractor,
+            )
+            assert isinstance(
+                confirm_attendance_by_qr_interactor,
+                ConfirmAttendanceByQrInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(

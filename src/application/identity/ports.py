@@ -35,6 +35,11 @@ class AthleteRepository(Protocol):
         athlete_public_id: UUID,
     ) -> Athlete | None: ...
 
+    async def get_by_public_id_for_update(
+        self,
+        athlete_public_id: UUID,
+    ) -> Athlete | None: ...
+
     async def get_by_id_for_update(
         self,
         athlete_id: int,

@@ -11,6 +11,11 @@ from application.athletes import (
     CreateManualAthleteInteractor,
     ListAthletesInteractor,
 )
+from application.attendance import (
+    AttendanceRepository,
+    AttendanceSessionRepository,
+    ConfirmAttendanceInteractor,
+)
 from application.club import (
     AssignTrainingGroupTrainerInteractor,
     ListTrainerCandidatesInteractor,
@@ -44,7 +49,7 @@ from application.identity.role_management import (
     RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
-from application.scanner import ResolveAthleteQrInteractor
+from application.scanner import ConfirmAttendanceByQrInteractor
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
     GetMySubscriptionInteractor,
@@ -67,18 +72,43 @@ from bootstrap.config import Settings
 
 class ApplicationProvider(Provider):
     @provide(scope=Scope.REQUEST)
-    def provide_resolve_athlete_qr_interactor(
+    def provide_confirm_attendance_interactor(
         self,
         user_repository: UserRepository,
         athlete_repository: AthleteRepository,
         role_repository: RoleRepository,
-        token_codec: AthleteQrTokenCodec,
-    ) -> ResolveAthleteQrInteractor:
-        return ResolveAthleteQrInteractor(
+        subscription_repository: SubscriptionRepository,
+        subscription_plan_repository: SubscriptionPlanRepository,
+        training_session_repository: AttendanceSessionRepository,
+        attendance_repository: AttendanceRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+        club_timezone: ZoneInfo,
+    ) -> ConfirmAttendanceInteractor:
+        return ConfirmAttendanceInteractor(
             user_repository=user_repository,
             athlete_repository=athlete_repository,
             role_repository=role_repository,
+            subscription_repository=subscription_repository,
+            subscription_plan_repository=subscription_plan_repository,
+            training_session_repository=training_session_repository,
+            attendance_repository=attendance_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
+            clock=clock,
+            club_timezone=club_timezone,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_confirm_attendance_by_qr_interactor(
+        self,
+        token_codec: AthleteQrTokenCodec,
+        confirm_attendance: ConfirmAttendanceInteractor,
+    ) -> ConfirmAttendanceByQrInteractor:
+        return ConfirmAttendanceByQrInteractor(
             token_codec=token_codec,
+            confirm_attendance=confirm_attendance,
         )
 
     @provide(scope=Scope.REQUEST)
