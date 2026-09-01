@@ -77,11 +77,11 @@ Upload Telegram role banners once and print their reusable `file_id` values:
 
 ```bash
 PYTHONPATH=src python -m scripts.upload_telegram_banners \
-  --admin-panel <path> \
-  --owner-panel <path> \
-  --trainer-panel <path> \
-  --athlete-panel <path> \
-  --role-selector <path> \
+  --admin-panel src/static/banners/<img_name.png> \
+  --owner-panel src/static/banners/<img_name.png> \
+  --trainer-panel src/static/banners/<img_name.png> \
+  --athlete-panel src/static/banners/<img_name.png> \
+  --role-selector src/static/banners/<img_name.png> \
   --chat-id <telegram_chat_id>
 ```
 
@@ -96,19 +96,20 @@ host, create `.env` with production credentials and restrict access to it.
 Build the application image:
 
 ```bash
-docker compose build
+make build
 ```
 
 Apply migrations from the same immutable image that will run the application:
 
 ```bash
-docker compose run --rm api alembic upgrade head
+make migrate
 ```
 
 Start the services in the background and verify their state:
 
 ```bash
-docker compose up -d
+make up
+make down
 docker compose ps
 ```
 
