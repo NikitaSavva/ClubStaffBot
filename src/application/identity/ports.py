@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Protocol
+from uuid import UUID
 
 from application.identity.dto import BotUserSummary
 from domain.identity import Athlete, BotInvite, Role, SystemRoleCode, User
@@ -28,6 +29,11 @@ class AthleteRepository(Protocol):
     async def add(self, athlete: Athlete) -> int: ...
 
     async def get_by_user_id(self, user_id: int) -> Athlete | None: ...
+
+    async def get_by_public_id(
+        self,
+        athlete_public_id: UUID,
+    ) -> Athlete | None: ...
 
     async def get_by_id_for_update(
         self,

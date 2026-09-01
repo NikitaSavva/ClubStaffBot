@@ -184,6 +184,9 @@ async def test_manual_athlete_is_persisted_unlinked_and_listed(
                     actor_telegram_id=actor_telegram_id
                 )
             )
+            resolved_by_public_id = await SqlAlchemyAthleteRepository(
+                session
+            ).get_by_public_id(athlete.athlete_public_id)
 
         assert athlete.user_id is None
         assert athlete.athlete_public_id.version == 4
@@ -196,6 +199,12 @@ async def test_manual_athlete_is_persisted_unlinked_and_listed(
         assert audit.entity_type == "ATHLETE"
         assert audit.created_at is not None
         assert athlete.id in {item.athlete_id for item in listed}
+        assert resolved_by_public_id is not None
+        assert resolved_by_public_id.id == athlete.id
+        assert (
+            resolved_by_public_id.athlete_public_id
+            == athlete.athlete_public_id
+        )
     finally:
         await engine.dispose()
 

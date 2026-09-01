@@ -46,6 +46,7 @@ class LinkAthleteAccountResult:
 class MenuItem:
     action_id: str
     title: str
+    web_app_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

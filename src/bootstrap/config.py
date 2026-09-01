@@ -1,7 +1,7 @@
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     club_timezone: str = Field(default="Europe/Moscow", min_length=1)
 
     telegram_bot_token: SecretStr = Field(min_length=1)
+    telegram_webapp_base_url: HttpUrl
+    telegram_webapp_init_data_max_age_seconds: int = Field(
+        default=3600,
+        gt=0,
+    )
     athlete_qr_signing_secret: SecretStr = Field(min_length=32)
     athlete_qr_ttl_seconds: int = Field(default=300, gt=0)
     owner_panel_banner_file_id: str | None = None
@@ -41,6 +46,18 @@ class Settings(BaseSettings):
         except ZoneInfoNotFoundError as error:
             raise ValueError("club_timezone must be a valid IANA timezone") from error
         return value
+
+    @field_validator("telegram_webapp_base_url")
+    @classmethod
+    def validate_telegram_webapp_base_url(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError("telegram_webapp_base_url must use HTTPS")
+        return value
+
+    @property
+    def telegram_scanner_webapp_url(self) -> str:
+        base_url = str(self.telegram_webapp_base_url).rstrip("/")
+        return f"{base_url}/webapp/scanner"
 
     @property
     def database_url(self) -> str:

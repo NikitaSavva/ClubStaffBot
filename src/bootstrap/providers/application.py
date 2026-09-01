@@ -44,6 +44,7 @@ from application.identity.role_management import (
     RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
+from application.scanner import ResolveAthleteQrInteractor
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
     GetMySubscriptionInteractor,
@@ -61,9 +62,25 @@ from application.training_sessions import (
     TrainingSessionGenerationWindowResolver,
     TrainingSessionRepository,
 )
+from bootstrap.config import Settings
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_resolve_athlete_qr_interactor(
+        self,
+        user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
+        role_repository: RoleRepository,
+        token_codec: AthleteQrTokenCodec,
+    ) -> ResolveAthleteQrInteractor:
+        return ResolveAthleteQrInteractor(
+            user_repository=user_repository,
+            athlete_repository=athlete_repository,
+            role_repository=role_repository,
+            token_codec=token_codec,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_get_athlete_qr_token_interactor(
         self,
@@ -376,10 +393,12 @@ class ApplicationProvider(Provider):
         self,
         user_repository: UserRepository,
         role_repository: RoleRepository,
+        settings: Settings,
     ) -> GetUserMenuContextInteractor:
         return GetUserMenuContextInteractor(
             user_repository=user_repository,
             role_repository=role_repository,
+            scanner_webapp_url=settings.telegram_scanner_webapp_url,
         )
 
     @provide(scope=Scope.REQUEST)

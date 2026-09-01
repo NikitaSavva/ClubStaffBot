@@ -15,6 +15,7 @@ def test_health_endpoint() -> None:
         redis_port=6379,
         redis_db=0,
         telegram_bot_token="123456789:test-token",
+        telegram_webapp_base_url="https://scanner.example.test",
         athlete_qr_signing_secret="s" * 32,
         _env_file=None,
     )

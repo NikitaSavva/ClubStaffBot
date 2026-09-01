@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import cast
+from uuid import UUID
 
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -39,6 +40,17 @@ class SqlAlchemyAthleteRepository:
     async def get_by_user_id(self, user_id: int) -> Athlete | None:
         model = await self._session.scalar(
             select(AthleteModel).where(AthleteModel.user_id == user_id)
+        )
+        return _to_athlete(model)
+
+    async def get_by_public_id(
+        self,
+        athlete_public_id: UUID,
+    ) -> Athlete | None:
+        model = await self._session.scalar(
+            select(AthleteModel).where(
+                AthleteModel.athlete_public_id == athlete_public_id
+            )
         )
         return _to_athlete(model)
 
