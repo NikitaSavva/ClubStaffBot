@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <title>Сканер QR</title>
+    <link rel="stylesheet" href="/webapp/static/scanner.css">
+    <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+    <script src="/webapp/static/scanner.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <p class="eyebrow">STAFF CONTROL</p>
+        <h1>Сканер QR</h1>
+        <p class="subtitle">Отсканируйте QR спортсмена для идентификации.</p>
+      </header>
+
+      <section class="state-card" aria-live="polite">
+        <div id="idle-state" class="state-panel">
+          <div class="scanner-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M7 7h3v3H7V7Zm7 0h3v3h-3V7ZM7 14h3v3H7v-3Zm7 0h1.5v1.5H17V17h-3v-3Zm1.5 0H17v1.5h-1.5V14Z"/>
+            </svg>
+          </div>
+          <h2>Готово к сканированию</h2>
+          <p>Telegram откроет встроенную камеру. Держите QR в центре экрана.</p>
+        </div>
+
+        <div id="loading-state" class="state-panel" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <h2>Проверяем QR…</h2>
+          <p>Подтверждаем код и данные спортсмена.</p>
+        </div>
+
+        <div id="success-state" class="state-panel" hidden>
+          <div class="status-icon status-icon--success" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m7.2 12.3 3.1 3.1 6.5-7"/></svg>
+          </div>
+          <p class="status-label">QR распознан</p>
+          <h2 id="athlete-name"></h2>
+          <p id="athlete-birth-date" class="athlete-meta"></p>
+        </div>
+
+        <div id="message-state" class="state-panel" hidden>
+          <div class="status-icon status-icon--error" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 7.5v5M12 16.5h.01"/></svg>
+          </div>
+          <h2 id="message-title">Не удалось проверить QR</h2>
+          <p id="message-text"></p>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="scan-button" class="button button--primary" type="button">
+          Сканировать QR
+        </button>
+        <button id="close-button" class="button button--secondary" type="button">
+          Закрыть
+        </button>
+      </div>
+      <p class="security-note">Данные проверяются защищённым сервером клуба.</p>
+    </main>
+  </body>
+</html>

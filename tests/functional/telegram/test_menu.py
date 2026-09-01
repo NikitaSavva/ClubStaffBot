@@ -139,6 +139,7 @@ async def add_user_with_roles(
             ),
             "owner-banner-file-id",
             [
+                [("Сканировать QR", None)],
                 [("Расписание", "administrator.schedule")],
                 [
                     (
@@ -163,6 +164,7 @@ async def add_user_with_roles(
             ),
             "admin-banner-file-id",
             [
+                [("Сканировать QR", None)],
                 [("Расписание", "administrator.schedule")],
                 [
                     (
@@ -203,7 +205,7 @@ async def test_start_opens_single_role_panel_without_back(
     role_code: SystemRoleCode,
     expected_caption: str,
     expected_banner: str,
-    expected_rows: list[list[tuple[str, str]]],
+    expected_rows: list[list[tuple[str, str | None]]],
 ) -> None:
     container = create_container(integration_settings)
     methods: list[TelegramMethod[Any]] = []
@@ -246,6 +248,24 @@ async def test_start_opens_single_role_panel_without_back(
         for row in method.reply_markup.inline_keyboard
     ]
     assert actual_rows == expected_rows
+    scanner_buttons = [
+        button
+        for row in method.reply_markup.inline_keyboard
+        for button in row
+        if button.text == "Сканировать QR"
+    ]
+    if role_code in (
+        SystemRoleCode.OWNER,
+        SystemRoleCode.ADMINISTRATOR,
+    ):
+        assert len(scanner_buttons) == 1
+        assert scanner_buttons[0].callback_data is None
+        assert scanner_buttons[0].web_app is not None
+        assert scanner_buttons[0].web_app.url == (
+            "https://scanner.example.test/webapp/scanner"
+        )
+    else:
+        assert scanner_buttons == []
     assert all(
         button.text != BACK_BUTTON_TEXT
         for row in method.reply_markup.inline_keyboard

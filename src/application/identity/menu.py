@@ -12,6 +12,10 @@ _ROLE_ORDER = (
 
 _ADMINISTRATIVE_MENU_ITEMS = (
     MenuItem(
+        action_id="administrator.scan_qr",
+        title="Сканировать QR",
+    ),
+    MenuItem(
         action_id="administrator.schedule",
         title="Расписание",
     ),
@@ -85,6 +89,8 @@ _ROLE_MENU_ITEMS = {
 
 def build_menu_context(
     role_codes: Iterable[SystemRoleCode],
+    *,
+    scanner_webapp_url: str,
 ) -> MenuContext:
     available_roles = set(role_codes)
     items_by_action_id = {
@@ -93,4 +99,16 @@ def build_menu_context(
         if role_code in available_roles
         for item in _ROLE_MENU_ITEMS[role_code]
     }
-    return MenuContext(items=tuple(items_by_action_id.values()))
+    items = tuple(
+        MenuItem(
+            action_id=item.action_id,
+            title=item.title,
+            web_app_url=(
+                scanner_webapp_url
+                if item.action_id == "administrator.scan_qr"
+                else None
+            ),
+        )
+        for item in items_by_action_id.values()
+    )
+    return MenuContext(items=items)

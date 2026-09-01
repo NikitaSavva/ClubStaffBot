@@ -1,0 +1,336 @@
+:root {
+  color-scheme: light dark;
+  --bg: var(--tg-theme-bg-color, #f3f5f2);
+  --surface: var(--tg-theme-secondary-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #172019);
+  --hint: var(--tg-theme-hint-color, #6f7871);
+  --accent: var(--tg-theme-button-color, #1f6b43);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --border: color-mix(in srgb, var(--text) 12%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --danger: #c2413b;
+  --radius-card: 24px;
+  --radius-button: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root.preview-light {
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --text: #172019;
+  --hint: #6f7871;
+  --accent: #1f6b43;
+  --accent-text: #ffffff;
+}
+
+:root.preview-dark {
+  --bg: #111612;
+  --surface: #1a211c;
+  --text: #f2f5f2;
+  --hint: #9ba59d;
+  --accent: #55b57f;
+  --accent-text: #07120b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  min-height: var(--tg-viewport-stable-height, 100svh);
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(100%, 480px);
+  min-height: var(--tg-viewport-stable-height, 100svh);
+  margin: 0 auto;
+  padding: max(24px, var(--tg-content-safe-area-inset-top, 0px))
+    max(18px, var(--tg-content-safe-area-inset-right, 0px))
+    max(18px, calc(var(--tg-content-safe-area-inset-bottom, 0px) + 16px))
+    max(18px, var(--tg-content-safe-area-inset-left, 0px));
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  padding: 8px 4px 22px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 8px;
+  font-size: clamp(30px, 9vw, 38px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+.subtitle {
+  max-width: 340px;
+  margin-bottom: 0;
+  color: var(--hint);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.state-card {
+  min-height: 318px;
+  padding: 34px 24px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.state-panel {
+  width: 100%;
+  text-align: center;
+}
+
+.state-panel[hidden] {
+  display: none;
+}
+
+.state-panel h2 {
+  margin: 20px 0 8px;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.state-panel p {
+  max-width: 290px;
+  margin: 0 auto;
+  color: var(--hint);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.scanner-mark {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  border-radius: 28px;
+}
+
+.scanner-mark svg {
+  width: 58px;
+  fill: var(--accent);
+}
+
+.scanner-mark span {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.scanner-mark span:nth-child(1) {
+  top: 13px;
+  left: 13px;
+  border-width: 2px 0 0 2px;
+  border-radius: 8px 0 0;
+}
+
+.scanner-mark span:nth-child(2) {
+  top: 13px;
+  right: 13px;
+  border-width: 2px 2px 0 0;
+  border-radius: 0 8px 0 0;
+}
+
+.scanner-mark span:nth-child(3) {
+  bottom: 13px;
+  left: 13px;
+  border-width: 0 0 2px 2px;
+  border-radius: 0 0 0 8px;
+}
+
+.scanner-mark span:nth-child(4) {
+  right: 13px;
+  bottom: 13px;
+  border-width: 0 2px 2px 0;
+  border-radius: 0 0 8px;
+}
+
+.spinner {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  border: 5px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.status-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.status-icon svg {
+  width: 36px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.status-icon--success {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.status-icon--error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 11%, var(--surface));
+}
+
+.status-label {
+  margin: 18px auto 0 !important;
+  color: var(--accent) !important;
+  font-size: 13px !important;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+#success-state h2 {
+  margin-top: 8px;
+  font-size: 26px;
+}
+
+.athlete-meta {
+  font-size: 16px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  margin-top: auto;
+  padding-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.button {
+  min-height: 54px;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.button--primary {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.button--secondary {
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.security-note {
+  margin: 13px 0 0;
+  color: var(--hint);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.8s;
+  }
+
+  .button {
+    transition: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.preview-light) {
+    --bg: var(--tg-theme-bg-color, #111612);
+    --surface: var(--tg-theme-secondary-bg-color, #1a211c);
+    --text: var(--tg-theme-text-color, #f2f5f2);
+    --hint: var(--tg-theme-hint-color, #9ba59d);
+    --accent: var(--tg-theme-button-color, #55b57f);
+    --accent-text: var(--tg-theme-button-text-color, #07120b);
+  }
+}
+
+@media (max-height: 650px) {
+  .app-header {
+    padding-bottom: 14px;
+  }
+
+  .state-card {
+    min-height: 250px;
+    padding-block: 24px;
+  }
+
+  .scanner-mark {
+    width: 92px;
+    height: 92px;
+  }
+}

@@ -13,6 +13,7 @@ from domain.identity import SystemRoleCode, User
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
 TELEGRAM_ID = 123456
+SCANNER_URL = "https://scanner.example.test/webapp/scanner"
 
 
 class FakeUserRepository:
@@ -66,6 +67,7 @@ def build_interactor(
         GetUserMenuContextInteractor(
             user_repository=users,
             role_repository=roles,
+            scanner_webapp_url=SCANNER_URL,
         ),
         users,
         roles,
@@ -81,6 +83,11 @@ def build_interactor(
                     MenuItem(
                         action_id="owner.home",
                         title="Меню владельца",
+                    ),
+                    MenuItem(
+                        action_id="administrator.scan_qr",
+                        title="Сканировать QR",
+                        web_app_url=SCANNER_URL,
                     ),
                     MenuItem(
                         action_id="administrator.schedule",
@@ -114,6 +121,11 @@ def build_interactor(
                     MenuItem(
                         action_id="administrator.home",
                         title="Меню администратора",
+                    ),
+                    MenuItem(
+                        action_id="administrator.scan_qr",
+                        title="Сканировать QR",
+                        web_app_url=SCANNER_URL,
                     ),
                     MenuItem(
                         action_id="administrator.schedule",
@@ -206,6 +218,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
 
     assert [item.action_id for item in result.items] == [
         "administrator.home",
+        "administrator.scan_qr",
         "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",
@@ -233,6 +246,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
 
     assert [item.action_id for item in result.items] == [
         "owner.home",
+        "administrator.scan_qr",
         "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",
@@ -258,6 +272,7 @@ async def test_unknown_user_is_controlled_failure() -> None:
     interactor = GetUserMenuContextInteractor(
         user_repository=users,
         role_repository=roles,
+        scanner_webapp_url=SCANNER_URL,
     )
 
     with pytest.raises(UserNotFoundError):

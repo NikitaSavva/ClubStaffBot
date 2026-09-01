@@ -8,6 +8,7 @@ from application.identity import MenuContext, MenuItem
 from presentation.telegram.keyboards.layout import (
     build_callback_button,
     build_inline_keyboard,
+    build_web_app_button,
 )
 from presentation.telegram.navigation import (
     NavigationTarget,
@@ -124,6 +125,9 @@ def build_role_panel_screen(
     }
     rows: list[tuple[InlineKeyboardButton, ...]] = []
     if role in (RolePanel.OWNER, RolePanel.ADMINISTRATOR):
+        scanner = items.get("administrator.scan_qr")
+        if scanner is not None:
+            rows.append((_menu_item_button(scanner),))
         schedule = items.get("administrator.schedule")
         if schedule is not None:
             rows.append((_menu_item_button(schedule),))
@@ -184,6 +188,8 @@ def _presentation_for(role: RolePanel) -> _RolePresentation:
 
 
 def _menu_item_button(item: MenuItem) -> InlineKeyboardButton:
+    if item.web_app_url is not None:
+        return build_web_app_button(text=item.title, url=item.web_app_url)
     return build_callback_button(
         text=item.title,
         callback_data=item.action_id,

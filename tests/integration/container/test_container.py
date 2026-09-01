@@ -43,6 +43,10 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.scanner import (
+    ResolveAthleteQrInteractor,
+    TelegramWebAppInitDataVerifier,
+)
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
     GetMySubscriptionInteractor,
@@ -84,6 +88,9 @@ from infrastructure.database.repositories import (
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
+from infrastructure.telegram_webapp import (
+    AiogramTelegramWebAppInitDataVerifier,
+)
 from presentation.telegram.screen import TelegramScreenRenderer
 
 
@@ -99,6 +106,7 @@ def settings() -> Settings:
         redis_port=6379,
         redis_db=0,
         telegram_bot_token="123456789:test-token",
+        telegram_webapp_base_url="https://scanner.example.test",
         athlete_qr_signing_secret="s" * 32,
         admin_panel_banner_file_id="admin-banner-file-id",
         trainer_panel_banner_file_id="trainer-banner-file-id",
@@ -123,6 +131,9 @@ async def test_container_resolves_app_and_request_dependencies(
         redis = await container.get(Redis)
         screen_renderer = await container.get(TelegramScreenRenderer)
         athlete_qr_token_codec = await container.get(AthleteQrTokenCodec)
+        init_data_verifier = await container.get(
+            TelegramWebAppInitDataVerifier
+        )
 
         async with container() as request_container:
             first_session = await request_container.get(AsyncSession)
@@ -187,6 +198,9 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             get_athlete_qr_token_interactor = await request_container.get(
                 GetAthleteQrTokenInteractor
+            )
+            resolve_athlete_qr_interactor = await request_container.get(
+                ResolveAthleteQrInteractor
             )
             menu_interactor = await request_container.get(
                 GetUserMenuContextInteractor
@@ -302,6 +316,10 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 get_athlete_qr_token_interactor,
                 GetAthleteQrTokenInteractor,
+            )
+            assert isinstance(
+                resolve_athlete_qr_interactor,
+                ResolveAthleteQrInteractor,
             )
             assert isinstance(menu_interactor, GetUserMenuContextInteractor)
             assert isinstance(
@@ -443,6 +461,10 @@ async def test_container_resolves_app_and_request_dependencies(
         assert isinstance(
             athlete_qr_token_codec,
             ItsDangerousAthleteQrTokenCodec,
+        )
+        assert isinstance(
+            init_data_verifier,
+            AiogramTelegramWebAppInitDataVerifier,
         )
         assert session_factory.kw["bind"] is engine
         assert redis.connection_pool.connection_kwargs["host"] == "cache"

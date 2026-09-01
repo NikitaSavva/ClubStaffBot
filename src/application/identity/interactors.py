@@ -137,9 +137,11 @@ class GetUserMenuContextInteractor:
         self,
         user_repository: UserRepository,
         role_repository: RoleRepository,
+        scanner_webapp_url: str,
     ) -> None:
         self._users = user_repository
         self._roles = role_repository
+        self._scanner_webapp_url = scanner_webapp_url
 
     async def __call__(
         self,
@@ -153,4 +155,7 @@ class GetUserMenuContextInteractor:
         if not role_codes:
             raise UserHasNoRolesError
 
-        return build_menu_context(role_codes)
+        return build_menu_context(
+            role_codes,
+            scanner_webapp_url=self._scanner_webapp_url,
+        )

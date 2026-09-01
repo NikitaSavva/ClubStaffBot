@@ -66,6 +66,7 @@ def integration_settings(database_url: str) -> Settings:
         redis_port=6379,
         redis_db=0,
         telegram_bot_token="123456789:test-token",
+        telegram_webapp_base_url="https://scanner.example.test",
         athlete_qr_signing_secret="s" * 32,
         owner_panel_banner_file_id="owner-banner-file-id",
         admin_panel_banner_file_id="admin-banner-file-id",

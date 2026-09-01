@@ -17,6 +17,7 @@ def test_beat_generates_next_week_every_sunday_at_club_midnight() -> None:
         redis_db=0,
         club_timezone="Europe/Moscow",
         telegram_bot_token="123456789:test-token",
+        telegram_webapp_base_url="https://scanner.example.test",
         athlete_qr_signing_secret="s" * 32,
         _env_file=None,
     )
