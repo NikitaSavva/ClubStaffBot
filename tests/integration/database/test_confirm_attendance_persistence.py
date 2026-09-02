@@ -219,6 +219,8 @@ async def setup_context(
 async def execute_confirmation(
     session_factory: async_sessionmaker[AsyncSession],
     context: Context,
+    *,
+    source: AttendanceSource = AttendanceSource.QR,
 ) -> ConfirmAttendanceOutcome:
     async with session_factory() as session:
         result = await ConfirmAttendanceInteractor(
@@ -241,7 +243,7 @@ async def execute_confirmation(
             ConfirmAttendanceCommand(
                 actor_telegram_id=context.actor_telegram_id,
                 athlete_public_id=context.athlete_public_id,
-                source=AttendanceSource.QR,
+                source=source,
             )
         )
         return result.outcome
@@ -465,6 +467,34 @@ async def test_last_visit_persists_attendance_expiration_and_two_audits(
                 "ATTENDANCE_CREATED",
                 "SUBSCRIPTION_EXPIRED",
             ]
+    finally:
+        await cleanup_context(session_factory, context)
+        await engine.dispose()
+
+
+async def test_manual_attendance_persists_source_and_administrator_actor(
+    database_url: str,
+) -> None:
+    engine = create_engine(database_url)
+    session_factory = create_session_factory(engine)
+    context = await setup_context(session_factory)
+    try:
+        outcome = await execute_confirmation(
+            session_factory,
+            context,
+            source=AttendanceSource.MANUAL,
+        )
+
+        assert outcome is ConfirmAttendanceOutcome.CONFIRMED
+        async with session_factory() as verification:
+            attendance = await verification.scalar(
+                select(AttendanceModel).where(
+                    AttendanceModel.athlete_id == context.athlete_id
+                )
+            )
+            assert attendance is not None
+            assert attendance.source is AttendanceSource.MANUAL
+            assert attendance.confirmed_by_user_id == context.actor_id
     finally:
         await cleanup_context(session_factory, context)
         await engine.dispose()

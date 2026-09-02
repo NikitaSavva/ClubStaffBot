@@ -90,6 +90,10 @@ def build_interactor(
                         web_app_url=SCANNER_URL,
                     ),
                     MenuItem(
+                        action_id="administrator.confirm_attendance",
+                        title="Отметить вход",
+                    ),
+                    MenuItem(
                         action_id="administrator.schedule",
                         title="Расписание",
                     ),
@@ -126,6 +130,10 @@ def build_interactor(
                         action_id="administrator.scan_qr",
                         title="Сканировать QR",
                         web_app_url=SCANNER_URL,
+                    ),
+                    MenuItem(
+                        action_id="administrator.confirm_attendance",
+                        title="Отметить вход",
                     ),
                     MenuItem(
                         action_id="administrator.schedule",
@@ -219,6 +227,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
     assert [item.action_id for item in result.items] == [
         "administrator.home",
         "administrator.scan_qr",
+        "administrator.confirm_attendance",
         "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",
@@ -247,6 +256,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
     assert [item.action_id for item in result.items] == [
         "owner.home",
         "administrator.scan_qr",
+        "administrator.confirm_attendance",
         "administrator.schedule",
         "administrator.activate_subscription",
         "administrator.create_athlete",

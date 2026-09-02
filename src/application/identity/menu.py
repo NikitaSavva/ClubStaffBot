@@ -16,6 +16,10 @@ _ADMINISTRATIVE_MENU_ITEMS = (
         title="Сканировать QR",
     ),
     MenuItem(
+        action_id="administrator.confirm_attendance",
+        title="Отметить вход",
+    ),
+    MenuItem(
         action_id="administrator.schedule",
         title="Расписание",
     ),

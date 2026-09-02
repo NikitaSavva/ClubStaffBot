@@ -10,9 +10,10 @@ from application.athlete_qr import (
     GetAthleteQrTokenInteractor,
 )
 from application.athletes import (
-    AthleteReader,
+    AthleteSelectionReader,
     CreateManualAthleteInteractor,
-    ListAthletesInteractor,
+    GetAthleteSelectionInteractor,
+    ListAthleteSelectionInteractor,
 )
 from application.attendance import (
     AttendanceRepository,
@@ -73,7 +74,7 @@ from bootstrap.config import Settings
 from bootstrap.container import create_container
 from infrastructure.athlete_qr import ItsDangerousAthleteQrTokenCodec
 from infrastructure.database.readers import (
-    SqlAlchemyAthleteReader,
+    SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
     SqlAlchemyCurrentWeekScheduleReader,
     SqlAlchemyMySubscriptionReader,
@@ -148,7 +149,9 @@ async def test_container_resolves_app_and_request_dependencies(
             assert first_session is second_session
             user_repository = await request_container.get(UserRepository)
             athlete_repository = await request_container.get(AthleteRepository)
-            athlete_reader = await request_container.get(AthleteReader)
+            athlete_reader = await request_container.get(
+                AthleteSelectionReader
+            )
             role_repository = await request_container.get(RoleRepository)
             invite_repository = await request_container.get(
                 BotInviteRepository
@@ -198,7 +201,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 CreateManualAthleteInteractor
             )
             list_athletes_interactor = await request_container.get(
-                ListAthletesInteractor
+                ListAthleteSelectionInteractor
+            )
+            get_athlete_interactor = await request_container.get(
+                GetAthleteSelectionInteractor
             )
             list_subscription_plans_interactor = await request_container.get(
                 ListActiveSubscriptionPlansInteractor
@@ -266,7 +272,10 @@ async def test_container_resolves_app_and_request_dependencies(
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
             assert isinstance(athlete_repository, SqlAlchemyAthleteRepository)
-            assert isinstance(athlete_reader, SqlAlchemyAthleteReader)
+            assert isinstance(
+                athlete_reader,
+                SqlAlchemyAthleteSelectionReader,
+            )
             assert isinstance(role_repository, SqlAlchemyRoleRepository)
             assert isinstance(invite_repository, SqlAlchemyBotInviteRepository)
             assert isinstance(bot_user_reader, SqlAlchemyBotUserReader)
@@ -324,7 +333,14 @@ async def test_container_resolves_app_and_request_dependencies(
                 create_manual_athlete_interactor,
                 CreateManualAthleteInteractor,
             )
-            assert isinstance(list_athletes_interactor, ListAthletesInteractor)
+            assert isinstance(
+                list_athletes_interactor,
+                ListAthleteSelectionInteractor,
+            )
+            assert isinstance(
+                get_athlete_interactor,
+                GetAthleteSelectionInteractor,
+            )
             assert isinstance(
                 list_subscription_plans_interactor,
                 ListActiveSubscriptionPlansInteractor,

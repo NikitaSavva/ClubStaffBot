@@ -1,6 +1,6 @@
 from infrastructure.database.readers.club import SqlAlchemyTrainingGroupReader
 from infrastructure.database.readers.identity import (
-    SqlAlchemyAthleteReader,
+    SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
 )
 from infrastructure.database.readers.subscriptions import (
@@ -12,7 +12,7 @@ from infrastructure.database.readers.training_sessions import (
 )
 
 __all__ = [
-    "SqlAlchemyAthleteReader",
+    "SqlAlchemyAthleteSelectionReader",
     "SqlAlchemyBotUserReader",
     "SqlAlchemyCurrentWeekScheduleReader",
     "SqlAlchemyMySubscriptionReader",

@@ -1,7 +1,8 @@
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
+from uuid import UUID
 
-from application.athletes import AthleteSummary
+from application.athletes import AthleteSelectionItem
 from application.club import ScheduleRuleSummary, TrainingGroupSummary
 from application.subscriptions import (
     ActivateSubscriptionResult,
@@ -65,8 +66,9 @@ def group(
     )
 
 
-ATHLETE = AthleteSummary(
+ATHLETE = AthleteSelectionItem(
     athlete_id=3,
+    athlete_public_id=UUID("00000000-0000-0000-0000-000000000003"),
     first_name="Иван",
     last_name="Иванов",
     birth_date=date(1991, 12, 27),

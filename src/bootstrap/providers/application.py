@@ -7,9 +7,10 @@ from application.athlete_qr import (
     GetAthleteQrTokenInteractor,
 )
 from application.athletes import (
-    AthleteReader,
+    AthleteSelectionReader,
     CreateManualAthleteInteractor,
-    ListAthletesInteractor,
+    GetAthleteSelectionInteractor,
+    ListAthleteSelectionInteractor,
 )
 from application.attendance import (
     AttendanceRepository,
@@ -161,13 +162,26 @@ class ApplicationProvider(Provider):
         )
 
     @provide(scope=Scope.REQUEST)
-    def provide_list_athletes_interactor(
+    def provide_list_athlete_selection_interactor(
         self,
         user_repository: UserRepository,
         role_repository: RoleRepository,
-        athlete_reader: AthleteReader,
-    ) -> ListAthletesInteractor:
-        return ListAthletesInteractor(
+        athlete_reader: AthleteSelectionReader,
+    ) -> ListAthleteSelectionInteractor:
+        return ListAthleteSelectionInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            athlete_reader=athlete_reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_get_athlete_selection_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        athlete_reader: AthleteSelectionReader,
+    ) -> GetAthleteSelectionInteractor:
+        return GetAthleteSelectionInteractor(
             user_repository=user_repository,
             role_repository=role_repository,
             athlete_reader=athlete_reader,

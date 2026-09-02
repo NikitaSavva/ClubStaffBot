@@ -5,9 +5,10 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from dishka.integrations.aiogram import FromDishka, inject
 
 from application.athletes import (
-    AthleteSummary,
-    ListAthletesInteractor,
-    ListAthletesQuery,
+    AthleteSelectionItem,
+    GetAthleteSelectionInteractor,
+    GetAthleteSelectionQuery,
+    ListAthleteSelectionInteractor,
 )
 from application.club import (
     ListTrainingGroupsInteractor,
@@ -38,6 +39,12 @@ from application.subscriptions.errors import (
     SubscriptionPlanNotFoundError,
 )
 from domain.subscriptions import SubscriptionAccessScope
+from presentation.telegram.handlers.athlete_selector import (
+    AthleteSelectionPurpose,
+    AthleteSelectorAction,
+    AthleteSelectorCallback,
+    start_athlete_selector,
+)
 from presentation.telegram.handlers.menu import (
     set_administrative_navigation_context,
     show_active_role_panel,
@@ -54,7 +61,6 @@ from presentation.telegram.navigation import (
     build_cancel_button,
     build_menu_button,
 )
-from presentation.telegram.presenters.athletes import format_athlete_label
 from presentation.telegram.presenters.training_groups import (
     format_training_group_button_label,
     format_training_group_details,
@@ -65,7 +71,10 @@ from presentation.telegram.screen import (
     TelegramScreen,
     TelegramScreenRenderer,
 )
-from presentation.telegram.states import SubscriptionActivationStates
+from presentation.telegram.states import (
+    AthleteSelectorStates,
+    SubscriptionActivationStates,
+)
 from presentation.telegram.ui_context import (
     clear_flow_context,
     get_flow_context,
@@ -73,7 +82,6 @@ from presentation.telegram.ui_context import (
 )
 
 ACTIVATE_SUBSCRIPTION_ACTION = "administrator.activate_subscription"
-SELECT_ATHLETE_PREFIX = "subscription:athlete:"
 SELECT_PLAN_PREFIX = "subscription:plan:"
 SELECT_GROUP_PREFIX = "subscription:group:"
 CONFIRM_ACTIVATION_ACTION = "subscription:activate"
@@ -90,23 +98,6 @@ ACTIVE_SUBSCRIPTION_TEXT = (
     "абонемента не входит в MVP."
 )
 ACTIVATION_CANCELLED_TEXT = "Выдача абонемента отменена."
-
-
-def build_athlete_selection_keyboard(
-    athletes: tuple[AthleteSummary, ...],
-) -> InlineKeyboardMarkup:
-    rows = tuple(
-        (
-            build_callback_button(
-                text=format_athlete_label(athlete),
-                callback_data=(
-                    f"{SELECT_ATHLETE_PREFIX}{athlete.athlete_id}"
-                ),
-            ),
-        )
-        for athlete in athletes
-    )
-    return build_inline_keyboard(*rows, (build_cancel_button(),))
 
 
 def build_plan_selection_keyboard(
@@ -183,18 +174,18 @@ def format_subscription_plan_label(plan: SubscriptionPlanSummary) -> str:
 async def handle_begin_subscription_activation(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[ListAthleteSelectionInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     message = callback.message
     if not isinstance(message, Message):
         return
     await set_administrative_navigation_context(state)
-    await set_flow_context(state, {})
-    await _show_athletes(
+    await start_athlete_selector(
         message=message,
         state=state,
         actor_telegram_id=callback.from_user.id,
+        purpose=AthleteSelectionPurpose.SUBSCRIPTION,
         interactor=athletes_interactor,
         renderer=renderer,
         mode=RenderMode.NEW,
@@ -204,25 +195,39 @@ async def handle_begin_subscription_activation(
 @inject
 async def handle_select_subscription_athlete(
     callback: CallbackQuery,
+    callback_data: AthleteSelectorCallback,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[GetAthleteSelectionInteractor],
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     message = callback.message
-    athlete_id = _parse_id(callback.data, SELECT_ATHLETE_PREFIX)
-    if not isinstance(message, Message) or athlete_id is None:
+    athlete_id = _parse_int(callback_data.value)
+    if not isinstance(message, Message):
         return
-    athletes = await _load_athletes(
-        callback.from_user.id,
-        athletes_interactor,
-        message,
-        state,
-        renderer,
-    )
-    if athletes is None:
+    if athlete_id is None:
+        await _show_terminal_error(
+            message,
+            state,
+            renderer,
+            ATHLETE_UNAVAILABLE_TEXT,
+        )
         return
-    athlete = _find_athlete(athletes, athlete_id)
+    try:
+        athlete = await athletes_interactor(
+            GetAthleteSelectionQuery(
+                actor_telegram_id=callback.from_user.id,
+                athlete_id=athlete_id,
+            )
+        )
+    except (AdministratorPermissionRequiredError, UserNotFoundError):
+        await _show_terminal_error(
+            message,
+            state,
+            renderer,
+            PERMISSION_DENIED_TEXT,
+        )
+        return
     if athlete is None:
         await _show_terminal_error(
             message,
@@ -246,7 +251,7 @@ async def handle_select_subscription_athlete(
 async def handle_select_subscription_plan(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[GetAthleteSelectionInteractor],
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
@@ -296,7 +301,7 @@ async def handle_select_subscription_plan(
 async def handle_select_subscription_group(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[GetAthleteSelectionInteractor],
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
@@ -454,19 +459,20 @@ async def handle_confirm_subscription_activation(
 async def handle_back_to_subscription_athletes(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[ListAthleteSelectionInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
     message = callback.message
     if not isinstance(message, Message):
         return
-    await set_flow_context(state, {})
-    await _show_athletes(
+    await start_athlete_selector(
         message=message,
         state=state,
         actor_telegram_id=callback.from_user.id,
+        purpose=AthleteSelectionPurpose.SUBSCRIPTION,
         interactor=athletes_interactor,
         renderer=renderer,
+        mode=RenderMode.EDIT,
     )
 
 
@@ -474,7 +480,7 @@ async def handle_back_to_subscription_athletes(
 async def handle_back_to_subscription_plans(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[GetAthleteSelectionInteractor],
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
 ) -> None:
@@ -505,7 +511,7 @@ async def handle_back_to_subscription_plans(
 async def handle_back_to_subscription_groups(
     callback: CallbackQuery,
     state: FSMContext,
-    athletes_interactor: FromDishka[ListAthletesInteractor],
+    athletes_interactor: FromDishka[GetAthleteSelectionInteractor],
     plans_interactor: FromDishka[ListActiveSubscriptionPlansInteractor],
     groups_interactor: FromDishka[ListTrainingGroupsInteractor],
     renderer: FromDishka[TelegramScreenRenderer],
@@ -599,8 +605,11 @@ def create_subscription_activation_router() -> Router:
     )
     router.callback_query.register(
         handle_select_subscription_athlete,
-        F.data.startswith(SELECT_ATHLETE_PREFIX),
-        SubscriptionActivationStates.selecting_athlete,
+        AthleteSelectorCallback.filter(
+            (F.purpose == AthleteSelectionPurpose.SUBSCRIPTION)
+            & (F.action == AthleteSelectorAction.SELECT)
+        ),
+        AthleteSelectorStates.selecting,
     )
     router.callback_query.register(
         handle_back_to_subscription_athletes,
@@ -647,47 +656,12 @@ def create_subscription_activation_router() -> Router:
     return router
 
 
-async def _show_athletes(
-    *,
-    message: Message,
-    state: FSMContext,
-    actor_telegram_id: int,
-    interactor: ListAthletesInteractor,
-    renderer: TelegramScreenRenderer,
-    mode: RenderMode = RenderMode.EDIT,
-) -> None:
-    athletes = await _load_athletes(
-        actor_telegram_id,
-        interactor,
-        message,
-        state,
-        renderer,
-        mode=mode,
-    )
-    if athletes is None:
-        return
-    await state.set_state(SubscriptionActivationStates.selecting_athlete)
-    text = (
-        f"{TITLE}\n\nВыберите спортсмена:"
-        if athletes
-        else f"{TITLE}\n\nСпортсмены не найдены."
-    )
-    await _render_flow(
-        message,
-        state,
-        renderer,
-        text,
-        build_athlete_selection_keyboard(athletes),
-        mode=mode,
-    )
-
-
 async def _show_plans(
     *,
     message: Message,
     state: FSMContext,
     actor_telegram_id: int,
-    athlete: AthleteSummary,
+    athlete: AthleteSelectionItem,
     interactor: ListActiveSubscriptionPlansInteractor,
     renderer: TelegramScreenRenderer,
 ) -> None:
@@ -723,7 +697,7 @@ async def _show_groups(
     message: Message,
     state: FSMContext,
     actor_telegram_id: int,
-    athlete: AthleteSummary,
+    athlete: AthleteSelectionItem,
     plan: SubscriptionPlanSummary,
     interactor: ListTrainingGroupsInteractor,
     renderer: TelegramScreenRenderer,
@@ -762,7 +736,7 @@ async def _show_groups(
 async def _show_confirmation(
     message: Message,
     state: FSMContext,
-    athlete: AthleteSummary,
+    athlete: AthleteSelectionItem,
     plan: SubscriptionPlanSummary,
     group: TrainingGroupSummary | None,
     renderer: TelegramScreenRenderer,
@@ -775,30 +749,6 @@ async def _show_confirmation(
         _confirmation_text(athlete, plan, group),
         build_activation_confirmation_keyboard(plan),
     )
-
-
-async def _load_athletes(
-    actor_telegram_id: int,
-    interactor: ListAthletesInteractor,
-    message: Message,
-    state: FSMContext,
-    renderer: TelegramScreenRenderer,
-    *,
-    mode: RenderMode = RenderMode.EDIT,
-) -> tuple[AthleteSummary, ...] | None:
-    try:
-        return await interactor(
-            ListAthletesQuery(actor_telegram_id=actor_telegram_id)
-        )
-    except (AdministratorPermissionRequiredError, UserNotFoundError):
-        await _show_terminal_error(
-            message,
-            state,
-            renderer,
-            PERMISSION_DENIED_TEXT,
-            mode=mode,
-        )
-        return None
 
 
 async def _load_plans(
@@ -848,10 +798,10 @@ async def _load_groups(
 async def _load_selected_athlete(
     actor_telegram_id: int,
     state: FSMContext,
-    interactor: ListAthletesInteractor,
+    interactor: GetAthleteSelectionInteractor,
     message: Message,
     renderer: TelegramScreenRenderer,
-) -> AthleteSummary | None:
+) -> AthleteSelectionItem | None:
     athlete_id = _flow_id(await get_flow_context(state), "athlete_id")
     if athlete_id is None:
         await _show_terminal_error(
@@ -861,16 +811,21 @@ async def _load_selected_athlete(
             ATHLETE_UNAVAILABLE_TEXT,
         )
         return None
-    athletes = await _load_athletes(
-        actor_telegram_id,
-        interactor,
-        message,
-        state,
-        renderer,
-    )
-    if athletes is None:
+    try:
+        athlete = await interactor(
+            GetAthleteSelectionQuery(
+                actor_telegram_id=actor_telegram_id,
+                athlete_id=athlete_id,
+            )
+        )
+    except (AdministratorPermissionRequiredError, UserNotFoundError):
+        await _show_terminal_error(
+            message,
+            state,
+            renderer,
+            PERMISSION_DENIED_TEXT,
+        )
         return None
-    athlete = _find_athlete(athletes, athlete_id)
     if athlete is None:
         await _show_terminal_error(
             message,
@@ -884,13 +839,13 @@ async def _load_selected_athlete(
 async def _load_athlete_and_plan(
     actor_telegram_id: int,
     state: FSMContext,
-    athletes_interactor: ListAthletesInteractor,
+    athletes_interactor: GetAthleteSelectionInteractor,
     plans_interactor: ListActiveSubscriptionPlansInteractor,
     message: Message,
     renderer: TelegramScreenRenderer,
     *,
     selected_plan_id: int | None = None,
-) -> tuple[AthleteSummary, SubscriptionPlanSummary] | None:
+) -> tuple[AthleteSelectionItem, SubscriptionPlanSummary] | None:
     athlete = await _load_selected_athlete(
         actor_telegram_id,
         state,
@@ -926,7 +881,7 @@ async def _load_athlete_and_plan(
 async def _load_confirmation_context(
     actor_telegram_id: int,
     state: FSMContext,
-    athletes_interactor: ListAthletesInteractor,
+    athletes_interactor: GetAthleteSelectionInteractor,
     plans_interactor: ListActiveSubscriptionPlansInteractor,
     groups_interactor: ListTrainingGroupsInteractor,
     message: Message,
@@ -934,7 +889,7 @@ async def _load_confirmation_context(
     *,
     selected_group_id: int | None = None,
 ) -> tuple[
-    AthleteSummary,
+    AthleteSelectionItem,
     SubscriptionPlanSummary,
     TrainingGroupSummary | None,
 ] | None:
@@ -1061,7 +1016,7 @@ async def _render_result(
 
 
 def _confirmation_text(
-    athlete: AthleteSummary,
+    athlete: AthleteSelectionItem,
     plan: SubscriptionPlanSummary,
     group: TrainingGroupSummary | None,
 ) -> str:
@@ -1137,16 +1092,6 @@ def _applicable_groups(
     )
 
 
-def _find_athlete(
-    athletes: tuple[AthleteSummary, ...],
-    athlete_id: int,
-) -> AthleteSummary | None:
-    return next(
-        (athlete for athlete in athletes if athlete.athlete_id == athlete_id),
-        None,
-    )
-
-
 def _find_plan(
     plans: tuple[SubscriptionPlanSummary, ...],
     plan_id: int | None,
@@ -1176,6 +1121,13 @@ def _parse_id(data: str | None, prefix: str) -> int | None:
         return None
     try:
         return int(data.removeprefix(prefix))
+    except ValueError:
+        return None
+
+
+def _parse_int(value: str) -> int | None:
+    try:
+        return int(value)
     except ValueError:
         return None
 
