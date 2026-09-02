@@ -61,9 +61,9 @@ INVALID_USERNAME_TEXT = (
     "Некорректный Telegram username. Введите username с одним символом @."
 )
 NO_RESULTS_TEXT = (
-    "Спортсмен не найден.\n\n"
-    "Если спортсмена ещё нет в системе, сначала создайте его через раздел "
-    "«Добавить спортсмена»."
+    "Поиск спортсмена\n\n"
+    "Спортсмены не найдены.\n"
+    "Введите другой запрос."
 )
 
 
@@ -167,24 +167,14 @@ async def show_athlete_selector(
         await _show_unavailable(message, state, renderer, mode=mode)
         return
 
-    await set_flow_context(
-        state,
-        _selector_context(purpose=purpose, page=result.page, search=search),
-    )
-    await state.set_state(AthleteSelectorStates.selecting)
-    await renderer.render(
+    await _render_selector_result(
+        message=message,
         state=state,
-        chat_id=message.chat.id,
-        screen=TelegramScreen(
-            text=_selector_text(purpose, result, search),
-            reply_markup=build_athlete_selector_keyboard(
-                purpose=purpose,
-                result=result,
-                search=search,
-            ),
-        ),
+        purpose=purpose,
+        result=result,
+        search=search,
+        renderer=renderer,
         mode=mode,
-        editable_message=message,
     )
 
 
@@ -239,7 +229,7 @@ def build_athlete_selector_keyboard(
     rows.append(
         (
             build_callback_button(
-                text="🔎 Новый поиск" if search is not None else "🔎 Поиск",
+                text="🔎 Поиск",
                 callback_data=AthleteSelectorCallback(
                     purpose=purpose,
                     action=AthleteSelectorAction.SEARCH,
@@ -264,6 +254,54 @@ def build_athlete_selector_keyboard(
     else:
         rows.append((build_menu_button(),))
     return build_inline_keyboard(*rows)
+
+
+def _search_keyboard(
+    purpose: AthleteSelectionPurpose,
+) -> InlineKeyboardMarkup:
+    return build_inline_keyboard(
+        (
+            build_callback_button(
+                text="Отмена",
+                callback_data=AthleteSelectorCallback(
+                    purpose=purpose,
+                    action=AthleteSelectorAction.RETURN,
+                    value="0",
+                ).pack(),
+            ),
+        )
+    )
+
+
+async def _render_selector_result(
+    *,
+    message: Message,
+    state: FSMContext,
+    purpose: AthleteSelectionPurpose,
+    result: AthleteSelectionPage,
+    search: AthleteSearch | None,
+    renderer: TelegramScreenRenderer,
+    mode: RenderMode,
+) -> None:
+    await set_flow_context(
+        state,
+        _selector_context(purpose=purpose, page=result.page, search=search),
+    )
+    await state.set_state(AthleteSelectorStates.selecting)
+    await renderer.render(
+        state=state,
+        chat_id=message.chat.id,
+        screen=TelegramScreen(
+            text=_selector_text(purpose, result, search),
+            reply_markup=build_athlete_selector_keyboard(
+                purpose=purpose,
+                result=result,
+                search=search,
+            ),
+        ),
+        mode=mode,
+        editable_message=message,
+    )
 
 
 @inject
@@ -308,19 +346,9 @@ async def handle_begin_selector_search(
         chat_id=message.chat.id,
         screen=TelegramScreen(
             text=SEARCH_PROMPT_TEXT,
-            reply_markup=build_inline_keyboard(
-                (
-                    build_callback_button(
-                        text="← Назад",
-                        callback_data=AthleteSelectorCallback(
-                            purpose=callback_data.purpose,
-                            action=AthleteSelectorAction.RETURN,
-                            value="0",
-                        ).pack(),
-                    ),
-                )
-            ),
+            reply_markup=_search_keyboard(callback_data.purpose),
         ),
+        mode=RenderMode.NEW,
         editable_message=message,
     )
 
@@ -366,6 +394,8 @@ async def handle_return_to_selector(
         purpose=callback_data.purpose,
         interactor=interactor,
         renderer=renderer,
+        page=0,
+        clear_search=True,
     )
 
 
@@ -394,37 +424,58 @@ async def handle_selector_search_input(
             chat_id=message.chat.id,
             screen=TelegramScreen(
                 text=invalid_text,
-                reply_markup=build_inline_keyboard(
-                    (
-                        build_callback_button(
-                            text="← Назад",
-                            callback_data=AthleteSelectorCallback(
-                                purpose=purpose,
-                                action=AthleteSelectorAction.RETURN,
-                                value="0",
-                            ).pack(),
-                        ),
-                    )
-                ),
+                reply_markup=_search_keyboard(purpose),
             ),
         )
         return
 
-    await set_flow_context(
-        state,
-        _selector_context(purpose=purpose, page=0, search=search),
-    )
+    try:
+        result = await interactor(
+            ListAthleteSelectionQuery(
+                actor_telegram_id=(
+                    message.from_user.id
+                    if message.from_user is not None
+                    else 0
+                ),
+                page=0,
+                search=search,
+            )
+        )
+    except (AdministratorPermissionRequiredError, UserNotFoundError):
+        await _show_unavailable(
+            message,
+            state,
+            renderer,
+            mode=RenderMode.NEW,
+        )
+        return
     await cleanup_accepted_user_input(message)
-    await show_athlete_selector(
+    if not result.items:
+        await set_flow_context(
+            state,
+            {
+                "selector_purpose": purpose.value,
+                "selector_page": 0,
+            },
+        )
+        await state.set_state(AthleteSelectorStates.waiting_for_query)
+        await renderer.render(
+            state=state,
+            chat_id=message.chat.id,
+            screen=TelegramScreen(
+                text=NO_RESULTS_TEXT,
+                reply_markup=_search_keyboard(purpose),
+            ),
+        )
+        return
+    await _render_selector_result(
         message=message,
         state=state,
-        actor_telegram_id=(
-            message.from_user.id if message.from_user is not None else 0
-        ),
         purpose=purpose,
-        interactor=interactor,
+        result=result,
+        search=search,
         renderer=renderer,
-        page=0,
+        mode=RenderMode.NEW,
     )
 
 

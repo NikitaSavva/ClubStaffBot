@@ -81,4 +81,4 @@ def test_keyboard_keeps_purpose_and_page_without_search_value() -> None:
     assert all("Иванов" not in callback for callback in callbacks)
     assert "← Предыдущая" in callbacks.values()
     assert "Следующая →" in callbacks.values()
-    assert "🔎 Новый поиск" in callbacks.values()
+    assert "🔎 Поиск" in callbacks.values()
