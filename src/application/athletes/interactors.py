@@ -1,7 +1,14 @@
 from application.athletes.commands import CreateManualAthleteCommand
-from application.athletes.dto import AthleteSummary, CreateManualAthleteResult
-from application.athletes.ports import AthleteReader
-from application.athletes.queries import ListAthletesQuery
+from application.athletes.dto import (
+    AthleteSelectionItem,
+    AthleteSelectionPage,
+    CreateManualAthleteResult,
+)
+from application.athletes.ports import AthleteSelectionReader
+from application.athletes.queries import (
+    GetAthleteSelectionQuery,
+    ListAthleteSelectionQuery,
+)
 from application.common import UnitOfWork
 from application.identity.authorization import require_administrative_actor
 from application.identity.ports import (
@@ -14,14 +21,15 @@ from domain.identity import Athlete
 
 ATHLETE_CREATED_MANUALLY_ACTION = "ATHLETE_CREATED_MANUALLY"
 ATHLETE_ENTITY_TYPE = "ATHLETE"
+ATHLETE_SELECTION_PAGE_SIZE = 8
 
 
-class ListAthletesInteractor:
+class ListAthleteSelectionInteractor:
     def __init__(
         self,
         user_repository: UserRepository,
         role_repository: RoleRepository,
-        athlete_reader: AthleteReader,
+        athlete_reader: AthleteSelectionReader,
     ) -> None:
         self._users = user_repository
         self._roles = role_repository
@@ -29,14 +37,48 @@ class ListAthletesInteractor:
 
     async def __call__(
         self,
-        query: ListAthletesQuery,
-    ) -> tuple[AthleteSummary, ...]:
+        query: ListAthleteSelectionQuery,
+    ) -> AthleteSelectionPage:
         await require_administrative_actor(
             telegram_id=query.actor_telegram_id,
             users=self._users,
             roles=self._roles,
         )
-        return await self._reader.list_all()
+        page = max(0, query.page)
+        rows = await self._reader.list_page(
+            offset=page * ATHLETE_SELECTION_PAGE_SIZE,
+            limit=ATHLETE_SELECTION_PAGE_SIZE + 1,
+            search=query.search,
+        )
+        return AthleteSelectionPage(
+            items=rows[:ATHLETE_SELECTION_PAGE_SIZE],
+            page=page,
+            has_previous=page > 0,
+            has_next=len(rows) > ATHLETE_SELECTION_PAGE_SIZE,
+        )
+
+
+class GetAthleteSelectionInteractor:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        athlete_reader: AthleteSelectionReader,
+    ) -> None:
+        self._users = user_repository
+        self._roles = role_repository
+        self._reader = athlete_reader
+
+    async def __call__(
+        self,
+        query: GetAthleteSelectionQuery,
+    ) -> AthleteSelectionItem | None:
+        await require_administrative_actor(
+            telegram_id=query.actor_telegram_id,
+            users=self._users,
+            roles=self._roles,
+        )
+        return await self._reader.get_by_id(query.athlete_id)
 
 
 class CreateManualAthleteInteractor:

@@ -128,6 +128,9 @@ def build_role_panel_screen(
         scanner = items.get("administrator.scan_qr")
         if scanner is not None:
             rows.append((_menu_item_button(scanner),))
+        confirm_attendance = items.get("administrator.confirm_attendance")
+        if confirm_attendance is not None:
+            rows.append((_menu_item_button(confirm_attendance),))
         schedule = items.get("administrator.schedule")
         if schedule is not None:
             rows.append((_menu_item_button(schedule),))

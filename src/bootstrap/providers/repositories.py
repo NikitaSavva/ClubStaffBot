@@ -1,7 +1,7 @@
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.athletes import AthleteReader
+from application.athletes import AthleteSelectionReader
 from application.attendance import (
     AttendanceRepository,
     AttendanceSessionRepository,
@@ -28,7 +28,7 @@ from application.training_sessions import (
     TrainingSessionRepository,
 )
 from infrastructure.database.readers import (
-    SqlAlchemyAthleteReader,
+    SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
     SqlAlchemyCurrentWeekScheduleReader,
     SqlAlchemyMySubscriptionReader,
@@ -103,11 +103,11 @@ class RepositoryProvider(Provider):
         return SqlAlchemySubscriptionRepository(session)
 
     @provide(scope=Scope.REQUEST)
-    def provide_athlete_reader(
+    def provide_athlete_selection_reader(
         self,
         session: AsyncSession,
-    ) -> AthleteReader:
-        return SqlAlchemyAthleteReader(session)
+    ) -> AthleteSelectionReader:
+        return SqlAlchemyAthleteSelectionReader(session)
 
     @provide(scope=Scope.REQUEST)
     def provide_schedule_rule_repository(

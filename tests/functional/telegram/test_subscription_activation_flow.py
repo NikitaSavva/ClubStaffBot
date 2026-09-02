@@ -47,10 +47,14 @@ from infrastructure.database.models import (
     UserModel,
     UserRoleModel,
 )
+from presentation.telegram.handlers.athlete_selector import (
+    AthleteSelectionPurpose,
+    AthleteSelectorAction,
+    AthleteSelectorCallback,
+)
 from presentation.telegram.handlers.subscription_activation import (
     ACTIVATE_SUBSCRIPTION_ACTION,
     CONFIRM_ACTIVATION_ACTION,
-    SELECT_ATHLETE_PREFIX,
     SELECT_GROUP_PREFIX,
     SELECT_PLAN_PREFIX,
 )
@@ -80,6 +84,9 @@ class FlowData:
     actor: User
     actor_user_id: int
     athlete_id: int
+    linked_athlete_id: int
+    linked_user_id: int
+    linked_username: str
     group_id: int
     specific_plan_id: int
     unlimited_plan_id: int
@@ -192,6 +199,7 @@ async def arrange_flow_data(
         username=f"admin_{uuid4().hex[:8]}",
     )
     async with session_factory.begin() as session:
+        linked_username = f"selector_{uuid4().hex[:8]}"
         actor_model = UserModel(
             telegram_id=actor_telegram_id,
             username=actor.username,
@@ -209,7 +217,26 @@ async def arrange_flow_data(
             phone=None,
             is_active=True,
         )
-        session.add_all([actor_model, athlete])
+        linked_user = UserModel(
+            telegram_id=81_000_000 + uuid4().int % 1_000_000_000,
+            username=linked_username,
+            first_name="Linked",
+            last_name="User",
+            is_active=True,
+            registered_at=NOW,
+            last_seen_at=NOW,
+        )
+        session.add_all([actor_model, athlete, linked_user])
+        await session.flush()
+        linked_athlete = AthleteModel(
+            user_id=linked_user.id,
+            first_name="Пётр",
+            last_name="Поисков",
+            birth_date=None,
+            phone=None,
+            is_active=True,
+        )
+        session.add(linked_athlete)
         await session.flush()
         assigned_role = await role(session, administrative_role)
         session.add(
@@ -242,6 +269,9 @@ async def arrange_flow_data(
         actor=actor,
         actor_user_id=actor_model.id,
         athlete_id=athlete.id,
+        linked_athlete_id=linked_athlete.id,
+        linked_user_id=linked_user.id,
+        linked_username=linked_username,
         group_id=group.id,
         specific_plan_id=specific_plan.id,
         unlimited_plan_id=unlimited_plan.id,
@@ -283,7 +313,14 @@ async def cleanup_flow_data(
             )
         )
         await session.execute(
-            delete(AthleteModel).where(AthleteModel.id == data.athlete_id)
+            delete(AthleteModel).where(
+                AthleteModel.id.in_(
+                    (data.athlete_id, data.linked_athlete_id)
+                )
+            )
+        )
+        await session.execute(
+            delete(UserModel).where(UserModel.id == data.linked_user_id)
         )
         await session.execute(
             delete(UserModel).where(UserModel.id == data.actor_user_id)
@@ -325,7 +362,11 @@ async def open_confirmation(
     athlete_screen = last_screen(methods)
     assert athlete_screen.text.startswith("Выдача абонемента")
     assert callback_texts(athlete_screen)[
-        f"{SELECT_ATHLETE_PREFIX}{data.athlete_id}"
+        AthleteSelectorCallback(
+            purpose=AthleteSelectionPurpose.SUBSCRIPTION,
+            action=AthleteSelectorAction.SELECT,
+            value=str(data.athlete_id),
+        ).pack()
     ] == "Иван Иванов (27.12.1991)"
 
     await dispatcher.feed_update(
@@ -333,7 +374,11 @@ async def open_confirmation(
         callback_update(
             update_id=3,
             sender=data.actor,
-            data=f"{SELECT_ATHLETE_PREFIX}{data.athlete_id}",
+            data=AthleteSelectorCallback(
+                purpose=AthleteSelectionPurpose.SUBSCRIPTION,
+                action=AthleteSelectorAction.SELECT,
+                value=str(data.athlete_id),
+            ).pack(),
             message_id=athlete_screen_id,
         ),
     )
@@ -389,6 +434,149 @@ async def open_confirmation(
     assert confirmation.text.startswith("Выдать абонемент?")
     assert CONFIRM_ACTIVATION_ACTION in callback_texts(confirmation)
     return athlete_screen_id
+
+
+async def test_common_selector_searches_surname_and_snapshot_username(
+    integration_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = create_container(integration_settings)
+    methods: list[TelegramMethod[Any]] = []
+
+    async def fake_bot_call(
+        bot: Bot,
+        method: TelegramMethod[Any],
+        request_timeout: int | None = None,
+    ) -> Any:
+        del bot, request_timeout
+        methods.append(method)
+        return telegram_method_result(method, message_id=len(methods))
+
+    monkeypatch.setattr(Bot, "__call__", fake_bot_call)
+    session_factory: async_sessionmaker[AsyncSession] | None = None
+    data: FlowData | None = None
+    try:
+        await bootstrap_system_roles(container)
+        session_factory = await container.get(
+            async_sessionmaker[AsyncSession]
+        )
+        data = await arrange_flow_data(
+            session_factory,
+            administrative_role=SystemRoleCode.ADMINISTRATOR,
+        )
+        bot = await container.get(Bot)
+        dispatcher = create_dispatcher(container)
+        await dispatcher.feed_update(
+            bot,
+            command_update(update_id=1, sender=data.actor, text="/menu"),
+        )
+        menu = next(
+            method for method in methods if isinstance(method, SendPhoto)
+        )
+        menu_id = sent_message_id(methods, menu)
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=2,
+                sender=data.actor,
+                data=ACTIVATE_SUBSCRIPTION_ACTION,
+                message_id=menu_id,
+            ),
+        )
+        selector = next(
+            method for method in methods if isinstance(method, SendMessage)
+        )
+        selector_id = sent_message_id(methods, selector)
+        search_callback = AthleteSelectorCallback(
+            purpose=AthleteSelectionPurpose.SUBSCRIPTION,
+            action=AthleteSelectorAction.SEARCH,
+            value="0",
+        ).pack()
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=3,
+                sender=data.actor,
+                data=search_callback,
+                message_id=selector_id,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            command_update(update_id=4, sender=data.actor, text="иванов"),
+        )
+        surname_result = last_screen(methods)
+        assert surname_result.text.startswith("Результаты поиска")
+        assert "Иван Иванов (27.12.1991)" in callback_texts(
+            surname_result
+        ).values()
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=5,
+                sender=data.actor,
+                data=search_callback,
+                message_id=selector_id,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=6,
+                sender=data.actor,
+                text=f"missing-{uuid4().hex}",
+            ),
+        )
+        no_result = last_screen(methods)
+        assert "Спортсмен не найден" in no_result.text
+        assert "«Добавить спортсмена»" in no_result.text
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=7,
+                sender=data.actor,
+                data=search_callback,
+                message_id=selector_id,
+            ),
+        )
+        await dispatcher.feed_update(
+            bot,
+            command_update(
+                update_id=8,
+                sender=data.actor,
+                text=f"@{data.linked_username.swapcase()}",
+            ),
+        )
+        username_result = last_screen(methods)
+        username_callbacks = callback_texts(username_result)
+        select_linked = AthleteSelectorCallback(
+            purpose=AthleteSelectionPurpose.SUBSCRIPTION,
+            action=AthleteSelectorAction.SELECT,
+            value=str(data.linked_athlete_id),
+        ).pack()
+        assert username_callbacks[select_linked] == "Пётр Поисков"
+        assert all(
+            data.linked_username not in callback
+            for callback in username_callbacks
+        )
+
+        await dispatcher.feed_update(
+            bot,
+            callback_update(
+                update_id=9,
+                sender=data.actor,
+                data=select_linked,
+                message_id=selector_id,
+            ),
+        )
+        assert "Выберите тариф" in last_screen(methods).text
+    finally:
+        if session_factory is not None and data is not None:
+            await cleanup_flow_data(session_factory, data)
+        await container.close()
 
 
 @pytest.mark.parametrize(

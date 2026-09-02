@@ -140,6 +140,7 @@ async def add_user_with_roles(
             "owner-banner-file-id",
             [
                 [("Сканировать QR", None)],
+                [("Отметить вход", "administrator.confirm_attendance")],
                 [("Расписание", "administrator.schedule")],
                 [
                     (
@@ -165,6 +166,7 @@ async def add_user_with_roles(
             "admin-banner-file-id",
             [
                 [("Сканировать QR", None)],
+                [("Отметить вход", "administrator.confirm_attendance")],
                 [("Расписание", "administrator.schedule")],
                 [
                     (
