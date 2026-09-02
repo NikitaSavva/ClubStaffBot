@@ -3,8 +3,10 @@ from collections.abc import AsyncIterator
 from aiogram import Bot
 from dishka import Provider, Scope, provide
 
+from application.trainer_notifications import TrainerNotifier
 from bootstrap.config import Settings
 from presentation.telegram.screen import BannerFileIds, TelegramScreenRenderer
+from presentation.telegram.trainer_notifications import AiogramTrainerNotifier
 
 
 class TelegramProvider(Provider):
@@ -15,6 +17,10 @@ class TelegramProvider(Provider):
             yield bot
         finally:
             await bot.session.close()
+
+    @provide(scope=Scope.APP)
+    def provide_trainer_notifier(self, bot: Bot) -> TrainerNotifier:
+        return AiogramTrainerNotifier(bot)
 
     @provide(scope=Scope.APP)
     def provide_screen_renderer(

@@ -2,6 +2,9 @@ from celery import Celery  # type: ignore[import-untyped]
 from celery.schedules import crontab  # type: ignore[import-untyped]
 
 from bootstrap.config import Settings
+from presentation.celery.tasks.trainer_notifications import (
+    POLL_TRAINER_NOTIFICATIONS_TASK,
+)
 from presentation.celery.tasks.training_sessions import (
     GENERATE_NEXT_WEEK_TRAINING_SESSIONS_TASK,
 )
@@ -11,7 +14,10 @@ def create_celery_app(settings: Settings) -> Celery:
     app = Celery(
         "staff_bot",
         broker=settings.redis_url,
-        include=("presentation.celery.tasks.training_sessions",),
+        include=(
+            "presentation.celery.tasks.training_sessions",
+            "presentation.celery.tasks.trainer_notifications",
+        ),
     )
     app.conf.update(
         enable_utc=True,
@@ -24,7 +30,11 @@ def create_celery_app(settings: Settings) -> Celery:
                     hour=0,
                     day_of_week="sunday",
                 ),
-            }
+            },
+            "poll-trainer-notifications": {
+                "task": POLL_TRAINER_NOTIFICATIONS_TASK,
+                "schedule": crontab(minute="*"),
+            },
         },
     )
     return app

@@ -62,6 +62,13 @@ from application.subscriptions import (
     SubscriptionPlanRepository,
     SubscriptionRepository,
 )
+from application.trainer_notifications import (
+    FindSessionsForTrainerNotificationInteractor,
+    NotifyTrainerBeforeSessionInteractor,
+    TrainerNotificationDeliveryRepository,
+    TrainerNotificationReader,
+    TrainerNotifier,
+)
 from application.training_sessions import (
     CurrentWeekScheduleReader,
     GenerateTrainingSessionsInteractor,
@@ -95,11 +102,16 @@ from infrastructure.database.repositories import (
     SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
 )
+from infrastructure.database.trainer_notifications import (
+    SqlAlchemyTrainerNotificationDeliveryRepository,
+    SqlAlchemyTrainerNotificationReader,
+)
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 from infrastructure.telegram_webapp import (
     AiogramTelegramWebAppInitDataVerifier,
 )
 from presentation.telegram.screen import TelegramScreenRenderer
+from presentation.telegram.trainer_notifications import AiogramTrainerNotifier
 
 
 @pytest.fixture
@@ -138,6 +150,7 @@ async def test_container_resolves_app_and_request_dependencies(
         session_factory = await container.get(async_sessionmaker[AsyncSession])
         redis = await container.get(Redis)
         screen_renderer = await container.get(TelegramScreenRenderer)
+        trainer_notifier = await container.get(TrainerNotifier)
         athlete_qr_token_codec = await container.get(AthleteQrTokenCodec)
         init_data_verifier = await container.get(
             TelegramWebAppInitDataVerifier
@@ -171,6 +184,14 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             current_week_schedule_reader = await request_container.get(
                 CurrentWeekScheduleReader
+            )
+            trainer_notification_reader = await request_container.get(
+                TrainerNotificationReader
+            )
+            trainer_notification_delivery_repository = (
+                await request_container.get(
+                    TrainerNotificationDeliveryRepository
+                )
             )
             subscription_plan_reader = await request_container.get(
                 SubscriptionPlanReader
@@ -268,6 +289,12 @@ async def test_container_resolves_app_and_request_dependencies(
             generation_window_resolver = await request_container.get(
                 TrainingSessionGenerationWindowResolver
             )
+            find_notifications_interactor = await request_container.get(
+                FindSessionsForTrainerNotificationInteractor
+            )
+            notify_trainer_interactor = await request_container.get(
+                NotifyTrainerBeforeSessionInteractor
+            )
             club_timezone = await request_container.get(ZoneInfo)
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
@@ -298,6 +325,14 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 current_week_schedule_reader,
                 SqlAlchemyCurrentWeekScheduleReader,
+            )
+            assert isinstance(
+                trainer_notification_reader,
+                SqlAlchemyTrainerNotificationReader,
+            )
+            assert isinstance(
+                trainer_notification_delivery_repository,
+                SqlAlchemyTrainerNotificationDeliveryRepository,
             )
             assert isinstance(audit_repository, SqlAlchemyAuditLogRepository)
             assert isinstance(
@@ -415,6 +450,14 @@ async def test_container_resolves_app_and_request_dependencies(
                 generation_window_resolver,
                 TrainingSessionGenerationWindowResolver,
             )
+            assert isinstance(
+                find_notifications_interactor,
+                FindSessionsForTrainerNotificationInteractor,
+            )
+            assert isinstance(
+                notify_trainer_interactor,
+                NotifyTrainerBeforeSessionInteractor,
+            )
             assert str(club_timezone) == "Europe/Moscow"
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
@@ -427,6 +470,11 @@ async def test_container_resolves_app_and_request_dependencies(
             assert schedule_rule_repository._session is first_session
             assert training_session_repository._session is first_session
             assert current_week_schedule_reader._session is first_session
+            assert trainer_notification_reader._session is first_session
+            assert (
+                trainer_notification_delivery_repository._session
+                is first_session
+            )
             assert audit_repository._session is first_session
             assert subscription_plan_reader._session is first_session
             assert my_subscription_reader._session is first_session
@@ -513,6 +561,7 @@ async def test_container_resolves_app_and_request_dependencies(
         assert session_factory.kw["bind"] is engine
         assert redis.connection_pool.connection_kwargs["host"] == "cache"
         assert screen_renderer._bot.id == 123456789
+        assert isinstance(trainer_notifier, AiogramTrainerNotifier)
         close_session.assert_awaited_once()
         dispose.assert_awaited_once()
         close_redis.assert_awaited_once()
