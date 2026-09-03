@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import cast
+
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +59,46 @@ class SqlAlchemySubscriptionRepository:
                 SubscriptionModel.status == SubscriptionStatus.ACTIVE,
             )
             .with_for_update()
+        )
+        return _to_subscription(model)
+
+    async def get_by_id_for_update(
+        self,
+        subscription_id: int,
+    ) -> Subscription | None:
+        model = await self._session.scalar(
+            select(SubscriptionModel)
+            .where(SubscriptionModel.id == subscription_id)
+            .with_for_update()
+        )
+        return _to_subscription(model)
+
+    async def get_latest_id_by_athlete(self, athlete_id: int) -> int | None:
+        return cast(
+            int | None,
+            await self._session.scalar(
+                select(SubscriptionModel.id)
+                .where(SubscriptionModel.athlete_id == athlete_id)
+                .order_by(
+                    SubscriptionModel.created_at.desc(),
+                    SubscriptionModel.id.desc(),
+                )
+                .limit(1)
+            ),
+        )
+
+    async def get_other_active_by_athlete(
+        self,
+        *,
+        athlete_id: int,
+        excluded_subscription_id: int,
+    ) -> Subscription | None:
+        model = await self._session.scalar(
+            select(SubscriptionModel).where(
+                SubscriptionModel.athlete_id == athlete_id,
+                SubscriptionModel.status == SubscriptionStatus.ACTIVE,
+                SubscriptionModel.id != excluded_subscription_id,
+            )
         )
         return _to_subscription(model)
 
@@ -118,6 +161,32 @@ class SqlAlchemySubscriptionRepository:
                 raise
             raise translated from error
         return model.id
+
+    async def update_correction(
+        self,
+        *,
+        subscription_id: int,
+        remaining_visits: int | None,
+        expires_at: datetime,
+        status: SubscriptionStatus,
+    ) -> bool:
+        try:
+            updated_id = await self._session.scalar(
+                update(SubscriptionModel)
+                .where(SubscriptionModel.id == subscription_id)
+                .values(
+                    remaining_visits=remaining_visits,
+                    expires_at=expires_at,
+                    status=status,
+                )
+                .returning(SubscriptionModel.id)
+            )
+        except IntegrityError as error:
+            translated = translate_integrity_error(error)
+            if translated is error:
+                raise
+            raise translated from error
+        return updated_id is not None
 
 
 def _to_subscription_plan(

@@ -1,9 +1,14 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from domain.club import TrainingGroupType
-from domain.subscriptions import Subscription, SubscriptionAccessScope
+from domain.subscriptions import (
+    Subscription,
+    SubscriptionAccessScope,
+    SubscriptionStatus,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,3 +71,42 @@ class MySubscriptionDetails:
 @dataclass(frozen=True, slots=True)
 class GetMySubscriptionResult:
     current: MySubscriptionDetails | None
+
+
+@dataclass(frozen=True, slots=True)
+class LatestSubscriptionDetails:
+    subscription_id: int
+    plan_name: str
+    is_unlimited: bool
+    access_scope: SubscriptionAccessScope
+    group: MySubscriptionGroup | None
+    starts_at: datetime
+    expires_at: datetime
+    remaining_visits: int | None
+    status: SubscriptionStatus
+
+
+@dataclass(frozen=True, slots=True)
+class AthleteLatestSubscriptionReadModel:
+    athlete_id: int
+    athlete_full_name: str
+    latest: LatestSubscriptionDetails | None
+
+
+@dataclass(frozen=True, slots=True)
+class GetLatestAthleteSubscriptionResult:
+    athlete_id: int
+    athlete_full_name: str
+    latest: LatestSubscriptionDetails | None
+
+
+class CorrectSubscriptionOutcome(StrEnum):
+    CORRECTED = "CORRECTED"
+    NO_CHANGES = "NO_CHANGES"
+
+
+@dataclass(frozen=True, slots=True)
+class CorrectSubscriptionResult:
+    outcome: CorrectSubscriptionOutcome
+    athlete_id: int
+    subscription_id: int

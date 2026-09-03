@@ -25,6 +25,9 @@ from presentation.telegram.handlers.start import create_start_router
 from presentation.telegram.handlers.subscription_activation import (
     create_subscription_activation_router,
 )
+from presentation.telegram.handlers.subscription_correction import (
+    create_subscription_correction_router,
+)
 from presentation.telegram.handlers.trainer_assignment import (
     create_trainer_assignment_router,
 )
@@ -46,4 +49,5 @@ def create_telegram_router() -> Router:
     router.include_router(create_role_management_router())
     router.include_router(create_trainer_assignment_router())
     router.include_router(create_subscription_activation_router())
+    router.include_router(create_subscription_correction_router())
     return router

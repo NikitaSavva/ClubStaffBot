@@ -70,6 +70,7 @@ NO_RESULTS_TEXT = (
 class AthleteSelectionPurpose(StrEnum):
     ATTENDANCE = "attendance"
     SUBSCRIPTION = "subscription"
+    SUBSCRIPTION_VIEW = "subscription_view"
 
 
 class AthleteSelectorAction(StrEnum):
@@ -492,10 +493,17 @@ async def handle_cancel_athlete_selector(
     await clear_flow_context(state)
     if telegram_user is None:
         return
+    notice_by_purpose = {
+        AthleteSelectionPurpose.ATTENDANCE: "Отметка посещения отменена.",
+        AthleteSelectionPurpose.SUBSCRIPTION: "Выдача абонемента отменена.",
+        AthleteSelectionPurpose.SUBSCRIPTION_VIEW: (
+            "Просмотр абонемента отменен."
+        ),
+    }
     notice = (
-        "Выдача абонемента отменена."
-        if purpose is AthleteSelectionPurpose.SUBSCRIPTION
-        else "Отметка посещения отменена."
+        notice_by_purpose[purpose]
+        if purpose is not None
+        else "Действие отменено."
     )
     await show_active_role_panel(
         chat_id=message.chat.id,
@@ -560,11 +568,11 @@ def _selector_text(
     result: AthleteSelectionPage,
     search: AthleteSearch | None,
 ) -> str:
-    title = (
-        "Отметить вход"
-        if purpose is AthleteSelectionPurpose.ATTENDANCE
-        else "Выдача абонемента"
-    )
+    title = {
+        AthleteSelectionPurpose.ATTENDANCE: "Отметить вход",
+        AthleteSelectionPurpose.SUBSCRIPTION: "Выдача абонемента",
+        AthleteSelectionPurpose.SUBSCRIPTION_VIEW: "Посмотреть абонемент",
+    }[purpose]
     if search is not None:
         heading = "Результаты поиска"
         if not result.items:

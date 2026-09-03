@@ -2,7 +2,9 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.subscriptions import (
+    AthleteLatestSubscriptionReadModel,
     AthleteSubscriptionReadModel,
+    LatestSubscriptionDetails,
     MySubscriptionGroup,
     PersistedActiveSubscriptionReadModel,
     SubscriptionPlanSummary,
@@ -39,6 +41,116 @@ class SqlAlchemySubscriptionPlanReader:
                 required_group_type=model.required_group_type,
             )
             for model in models
+        )
+
+
+class SqlAlchemyLatestAthleteSubscriptionReader:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_athlete_id(
+        self,
+        athlete_id: int,
+    ) -> AthleteLatestSubscriptionReadModel | None:
+        latest_subscription_id = (
+            select(SubscriptionModel.id)
+            .where(SubscriptionModel.athlete_id == athlete_id)
+            .order_by(
+                SubscriptionModel.created_at.desc(),
+                SubscriptionModel.id.desc(),
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+        row = (
+            await self._session.execute(
+                select(
+                    AthleteModel.id.label("athlete_id"),
+                    AthleteModel.first_name,
+                    AthleteModel.last_name,
+                    SubscriptionModel.id.label("subscription_id"),
+                    SubscriptionModel.starts_at,
+                    SubscriptionModel.expires_at,
+                    SubscriptionModel.remaining_visits,
+                    SubscriptionModel.status,
+                    SubscriptionPlanModel.name.label("plan_name"),
+                    SubscriptionPlanModel.is_unlimited,
+                    SubscriptionPlanModel.access_scope,
+                    TrainingGroupModel.id.label("training_group_id"),
+                    SportDirectionModel.name.label("direction_name"),
+                    GroupNameModel.name.label("group_name"),
+                )
+                .select_from(AthleteModel)
+                .outerjoin(
+                    SubscriptionModel,
+                    SubscriptionModel.id == latest_subscription_id,
+                )
+                .outerjoin(
+                    SubscriptionPlanModel,
+                    SubscriptionPlanModel.id == SubscriptionModel.plan_id,
+                )
+                .outerjoin(
+                    TrainingGroupModel,
+                    TrainingGroupModel.id == SubscriptionModel.group_id,
+                )
+                .outerjoin(
+                    SportDirectionModel,
+                    SportDirectionModel.id == TrainingGroupModel.direction_id,
+                )
+                .outerjoin(
+                    GroupNameModel,
+                    GroupNameModel.id == TrainingGroupModel.name_id,
+                )
+                .where(AthleteModel.id == athlete_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+
+        athlete_full_name = " ".join(
+            part for part in (row.first_name, row.last_name) if part
+        )
+        if row.subscription_id is None:
+            return AthleteLatestSubscriptionReadModel(
+                athlete_id=row.athlete_id,
+                athlete_full_name=athlete_full_name,
+                latest=None,
+            )
+        if (
+            row.starts_at is None
+            or row.expires_at is None
+            or row.status is None
+            or row.plan_name is None
+            or row.is_unlimited is None
+            or row.access_scope is None
+        ):
+            raise RuntimeError("Latest Subscription read model is incomplete")
+
+        group = None
+        if row.training_group_id is not None:
+            if row.direction_name is None or row.group_name is None:
+                raise RuntimeError(
+                    "Latest Subscription group read model is incomplete"
+                )
+            group = MySubscriptionGroup(
+                training_group_id=row.training_group_id,
+                direction_name=row.direction_name,
+                group_name=row.group_name,
+            )
+        return AthleteLatestSubscriptionReadModel(
+            athlete_id=row.athlete_id,
+            athlete_full_name=athlete_full_name,
+            latest=LatestSubscriptionDetails(
+                subscription_id=row.subscription_id,
+                plan_name=row.plan_name,
+                is_unlimited=row.is_unlimited,
+                access_scope=row.access_scope,
+                group=group,
+                starts_at=row.starts_at,
+                expires_at=row.expires_at,
+                remaining_visits=row.remaining_visits,
+                status=row.status,
+            ),
         )
 
 

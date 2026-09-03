@@ -148,6 +148,12 @@ async def add_user_with_roles(
                         "administrator.activate_subscription",
                     )
                 ],
+                [
+                    (
+                        "Посмотреть абонемент",
+                        "administrator.view_subscription",
+                    )
+                ],
                 [("Добавить спортсмена", "administrator.create_athlete")],
                 [("Назначить тренера", "administrator.assign_trainer")],
                 [
@@ -172,6 +178,12 @@ async def add_user_with_roles(
                     (
                         "Выдать абонемент",
                         "administrator.activate_subscription",
+                    )
+                ],
+                [
+                    (
+                        "Посмотреть абонемент",
+                        "administrator.view_subscription",
                     )
                 ],
                 [("Добавить спортсмена", "administrator.create_athlete")],

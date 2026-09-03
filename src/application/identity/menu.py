@@ -28,6 +28,10 @@ _ADMINISTRATIVE_MENU_ITEMS = (
         title="Выдать абонемент",
     ),
     MenuItem(
+        action_id="administrator.view_subscription",
+        title="Посмотреть абонемент",
+    ),
+    MenuItem(
         action_id="administrator.create_athlete",
         title="Добавить спортсмена",
     ),
