@@ -120,6 +120,7 @@ class NotifyTrainerBeforeSessionInteractor:
                 )
 
             claim = await self._deliveries.claim(
+                notification_type=NOTIFICATION_TYPE,
                 training_session_id=preliminary_session.id,
                 recipient_user_id=preliminary_session.trainer_id,
                 scheduled_at=preliminary_session.starts_at - NOTIFY_BEFORE,

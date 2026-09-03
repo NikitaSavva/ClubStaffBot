@@ -1,5 +1,9 @@
 from bootstrap.config import Settings
 from presentation.celery.app import create_celery_app
+from presentation.celery.tasks.athlete_notifications import (
+    NOTIFY_ATHLETE_BEFORE_SESSION_TASK,
+    POLL_ATHLETE_NOTIFICATIONS_TASK,
+)
 from presentation.celery.tasks.trainer_notifications import (
     NOTIFY_TRAINER_BEFORE_SESSION_TASK,
     POLL_TRAINER_NOTIFICATIONS_TASK,
@@ -31,6 +35,8 @@ def test_beat_generates_next_week_every_sunday_at_club_midnight() -> None:
     assert app.conf.timezone == "Europe/Moscow"
     assert app.conf.enable_utc is True
     assert GENERATE_NEXT_WEEK_TRAINING_SESSIONS_TASK in app.tasks
+    assert POLL_ATHLETE_NOTIFICATIONS_TASK in app.tasks
+    assert NOTIFY_ATHLETE_BEFORE_SESSION_TASK in app.tasks
     assert POLL_TRAINER_NOTIFICATIONS_TASK in app.tasks
     assert NOTIFY_TRAINER_BEFORE_SESSION_TASK in app.tasks
     schedule = app.conf.beat_schedule[
@@ -45,3 +51,8 @@ def test_beat_generates_next_week_every_sunday_at_club_midnight() -> None:
     ]
     assert notification_schedule["task"] == POLL_TRAINER_NOTIFICATIONS_TASK
     assert notification_schedule["schedule"].minute == set(range(60))
+    athlete_notification_schedule = app.conf.beat_schedule[
+        "poll-athlete-notifications"
+    ]
+    assert athlete_notification_schedule["task"] == POLL_ATHLETE_NOTIFICATIONS_TASK
+    assert athlete_notification_schedule["schedule"].minute == set(range(60))

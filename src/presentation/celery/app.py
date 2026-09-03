@@ -1,7 +1,10 @@
-from celery import Celery  # type: ignore[import-untyped]
-from celery.schedules import crontab  # type: ignore[import-untyped]
+from celery import Celery
+from celery.schedules import crontab
 
 from bootstrap.config import Settings
+from presentation.celery.tasks.athlete_notifications import (
+    POLL_ATHLETE_NOTIFICATIONS_TASK,
+)
 from presentation.celery.tasks.trainer_notifications import (
     POLL_TRAINER_NOTIFICATIONS_TASK,
 )
@@ -17,6 +20,7 @@ def create_celery_app(settings: Settings) -> Celery:
         include=(
             "presentation.celery.tasks.training_sessions",
             "presentation.celery.tasks.trainer_notifications",
+            "presentation.celery.tasks.athlete_notifications",
         ),
     )
     app.conf.update(
@@ -33,6 +37,10 @@ def create_celery_app(settings: Settings) -> Celery:
             },
             "poll-trainer-notifications": {
                 "task": POLL_TRAINER_NOTIFICATIONS_TASK,
+                "schedule": crontab(minute="*"),
+            },
+            "poll-athlete-notifications": {
+                "task": POLL_ATHLETE_NOTIFICATIONS_TASK,
                 "schedule": crontab(minute="*"),
             },
         },

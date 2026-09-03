@@ -1,7 +1,7 @@
 import asyncio
 
 import structlog
-from celery import shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 from dishka import AsyncContainer
 
 from application.training_sessions import (
@@ -49,7 +49,7 @@ async def run() -> GenerateTrainingSessionsResult:
         await container.close()
 
 
-@shared_task(name=GENERATE_NEXT_WEEK_TRAINING_SESSIONS_TASK)  # type: ignore[untyped-decorator]
+@shared_task(name=GENERATE_NEXT_WEEK_TRAINING_SESSIONS_TASK)
 def generate_next_week_training_sessions() -> TaskResult:
     try:
         result = asyncio.run(run())

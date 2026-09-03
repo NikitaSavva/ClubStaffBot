@@ -1,5 +1,10 @@
 from datetime import datetime
 
+from application.notification_delivery import (
+    PermanentNotificationSenderError,
+    RetryableNotificationSenderError,
+)
+
 
 class RetryableTrainerNotificationDeliveryError(Exception):
     def __init__(
@@ -19,11 +24,5 @@ class RetryableTrainerNotificationDeliveryError(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
-class RetryableTrainerNotifierError(Exception):
-    def __init__(self, *, retry_after_seconds: int | None = None) -> None:
-        super().__init__("Trainer notifier is temporarily unavailable")
-        self.retry_after_seconds = retry_after_seconds
-
-
-class PermanentTrainerNotifierError(Exception):
-    pass
+RetryableTrainerNotifierError = RetryableNotificationSenderError
+PermanentTrainerNotifierError = PermanentNotificationSenderError

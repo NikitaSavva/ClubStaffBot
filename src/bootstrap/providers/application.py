@@ -2,6 +2,12 @@ from zoneinfo import ZoneInfo
 
 from dishka import Provider, Scope, provide
 
+from application.athlete_notifications import (
+    AthleteNotificationReader,
+    AthleteNotifier,
+    FindAthletesForSessionReminderInteractor,
+    NotifyAthleteBeforeSessionInteractor,
+)
 from application.athlete_qr import (
     AthleteQrTokenCodec,
     GetAthleteQrTokenInteractor,
@@ -50,6 +56,7 @@ from application.identity.role_management import (
     RemoveUserRoleInteractor,
     SearchBotUsersInteractor,
 )
+from application.notification_delivery import NotificationDeliveryRepository
 from application.scanner import ConfirmAttendanceByQrInteractor
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
@@ -79,6 +86,36 @@ from bootstrap.config import Settings
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_find_athlete_notification_candidates_interactor(
+        self,
+        reader: AthleteNotificationReader,
+        clock: Clock,
+    ) -> FindAthletesForSessionReminderInteractor:
+        return FindAthletesForSessionReminderInteractor(
+            reader=reader,
+            clock=clock,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_notify_athlete_before_session_interactor(
+        self,
+        reader: AthleteNotificationReader,
+        delivery_repository: NotificationDeliveryRepository,
+        notifier: AthleteNotifier,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+        club_timezone: ZoneInfo,
+    ) -> NotifyAthleteBeforeSessionInteractor:
+        return NotifyAthleteBeforeSessionInteractor(
+            reader=reader,
+            delivery_repository=delivery_repository,
+            notifier=notifier,
+            unit_of_work=unit_of_work,
+            clock=clock,
+            club_timezone=club_timezone,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_find_trainer_notification_sessions_interactor(
         self,
