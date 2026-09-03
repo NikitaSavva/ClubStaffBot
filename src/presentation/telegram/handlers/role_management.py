@@ -62,16 +62,16 @@ BEGIN_REMOVE_ROLE_PREFIX = "user_roles.remove:start:"
 REMOVE_ROLE_PREFIX = "user_roles.remove_role:"
 
 ENTER_USER_QUERY_TEXT = (
-    "Поиск пользователей\n\n"
+    "Поиск осуществляется среди зарегистрированных Telegram-пользователей\n\n"
     "Введите имя, фамилию или Telegram username."
 )
 INVALID_USER_QUERY_TEXT = (
-    "Поиск пользователей\n\n"
+    "Поиск осуществляется среди зарегистрированных Telegram-пользователей\n\n"
     "Запрос не может быть пустым.\n"
     "Введите имя, фамилию или Telegram username."
 )
 NO_USERS_FOUND_TEXT = (
-    "Поиск пользователей\n\n"
+    "Поиск осуществляется среди зарегистрированных Telegram-пользователей\n\n"
     "Пользователи не найдены.\n"
     "Введите другой запрос."
 )
