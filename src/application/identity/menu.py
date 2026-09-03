@@ -45,7 +45,7 @@ _ADMINISTRATIVE_MENU_ITEMS = (
     ),
     MenuItem(
         action_id="administrator.manage_users",
-        title="Пользователи",
+        title="Назначить роль",
     ),
 )
 
