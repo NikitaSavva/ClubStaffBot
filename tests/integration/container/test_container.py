@@ -5,6 +5,12 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from application.athlete_notifications import (
+    AthleteNotificationReader,
+    AthleteNotifier,
+    FindAthletesForSessionReminderInteractor,
+    NotifyAthleteBeforeSessionInteractor,
+)
 from application.athlete_qr import (
     AthleteQrTokenCodec,
     GetAthleteQrTokenInteractor,
@@ -49,6 +55,7 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.notification_delivery import NotificationDeliveryRepository
 from application.scanner import (
     ConfirmAttendanceByQrInteractor,
     TelegramWebAppInitDataVerifier,
@@ -80,6 +87,12 @@ from application.training_sessions import (
 from bootstrap.config import Settings
 from bootstrap.container import create_container
 from infrastructure.athlete_qr import ItsDangerousAthleteQrTokenCodec
+from infrastructure.database.athlete_notifications import (
+    SqlAlchemyAthleteNotificationReader,
+)
+from infrastructure.database.notification_delivery import (
+    SqlAlchemyNotificationDeliveryRepository,
+)
 from infrastructure.database.readers import (
     SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
@@ -110,6 +123,7 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 from infrastructure.telegram_webapp import (
     AiogramTelegramWebAppInitDataVerifier,
 )
+from presentation.telegram.athlete_notifications import AiogramAthleteNotifier
 from presentation.telegram.screen import TelegramScreenRenderer
 from presentation.telegram.trainer_notifications import AiogramTrainerNotifier
 
@@ -151,6 +165,7 @@ async def test_container_resolves_app_and_request_dependencies(
         redis = await container.get(Redis)
         screen_renderer = await container.get(TelegramScreenRenderer)
         trainer_notifier = await container.get(TrainerNotifier)
+        athlete_notifier = await container.get(AthleteNotifier)
         athlete_qr_token_codec = await container.get(AthleteQrTokenCodec)
         init_data_verifier = await container.get(
             TelegramWebAppInitDataVerifier
@@ -187,6 +202,12 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             trainer_notification_reader = await request_container.get(
                 TrainerNotificationReader
+            )
+            athlete_notification_reader = await request_container.get(
+                AthleteNotificationReader
+            )
+            notification_delivery_repository = await request_container.get(
+                NotificationDeliveryRepository
             )
             trainer_notification_delivery_repository = (
                 await request_container.get(
@@ -295,6 +316,14 @@ async def test_container_resolves_app_and_request_dependencies(
             notify_trainer_interactor = await request_container.get(
                 NotifyTrainerBeforeSessionInteractor
             )
+            find_athlete_notifications_interactor = (
+                await request_container.get(
+                    FindAthletesForSessionReminderInteractor
+                )
+            )
+            notify_athlete_interactor = await request_container.get(
+                NotifyAthleteBeforeSessionInteractor
+            )
             club_timezone = await request_container.get(ZoneInfo)
 
             assert isinstance(user_repository, SqlAlchemyUserRepository)
@@ -329,6 +358,14 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 trainer_notification_reader,
                 SqlAlchemyTrainerNotificationReader,
+            )
+            assert isinstance(
+                athlete_notification_reader,
+                SqlAlchemyAthleteNotificationReader,
+            )
+            assert isinstance(
+                notification_delivery_repository,
+                SqlAlchemyNotificationDeliveryRepository,
             )
             assert isinstance(
                 trainer_notification_delivery_repository,
@@ -458,6 +495,14 @@ async def test_container_resolves_app_and_request_dependencies(
                 notify_trainer_interactor,
                 NotifyTrainerBeforeSessionInteractor,
             )
+            assert isinstance(
+                find_athlete_notifications_interactor,
+                FindAthletesForSessionReminderInteractor,
+            )
+            assert isinstance(
+                notify_athlete_interactor,
+                NotifyAthleteBeforeSessionInteractor,
+            )
             assert str(club_timezone) == "Europe/Moscow"
             assert user_repository._session is first_session
             assert athlete_repository._session is first_session
@@ -471,6 +516,8 @@ async def test_container_resolves_app_and_request_dependencies(
             assert training_session_repository._session is first_session
             assert current_week_schedule_reader._session is first_session
             assert trainer_notification_reader._session is first_session
+            assert athlete_notification_reader._session is first_session
+            assert notification_delivery_repository._session is first_session
             assert (
                 trainer_notification_delivery_repository._session
                 is first_session
@@ -562,6 +609,7 @@ async def test_container_resolves_app_and_request_dependencies(
         assert redis.connection_pool.connection_kwargs["host"] == "cache"
         assert screen_renderer._bot.id == 123456789
         assert isinstance(trainer_notifier, AiogramTrainerNotifier)
+        assert isinstance(athlete_notifier, AiogramAthleteNotifier)
         close_session.assert_awaited_once()
         dispose.assert_awaited_once()
         close_redis.assert_awaited_once()

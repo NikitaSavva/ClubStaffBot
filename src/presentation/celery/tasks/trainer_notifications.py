@@ -2,7 +2,7 @@ import asyncio
 from typing import Any
 
 import structlog
-from celery import shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 from dishka import AsyncContainer
 
 from application.trainer_notifications import (
@@ -82,7 +82,7 @@ async def run_notify(
         await container.close()
 
 
-@shared_task(name=POLL_TRAINER_NOTIFICATIONS_TASK)  # type: ignore[untyped-decorator]
+@shared_task(name=POLL_TRAINER_NOTIFICATIONS_TASK)
 def poll_trainer_notifications() -> dict[str, int | str]:
     result = asyncio.run(run_find())
     for training_session_id in result.training_session_ids:
@@ -106,7 +106,7 @@ def poll_trainer_notifications() -> dict[str, int | str]:
     bind=True,
     name=NOTIFY_TRAINER_BEFORE_SESSION_TASK,
     max_retries=3,
-)  # type: ignore[untyped-decorator]
+)
 def notify_trainer_before_session(
     task: Any,
     *,

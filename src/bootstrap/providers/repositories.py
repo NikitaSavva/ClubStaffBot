@@ -1,6 +1,7 @@
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.athlete_notifications import AthleteNotificationReader
 from application.athletes import AthleteSelectionReader
 from application.attendance import (
     AttendanceRepository,
@@ -16,6 +17,7 @@ from application.identity.ports import (
     RoleRepository,
     UserRepository,
 )
+from application.notification_delivery import NotificationDeliveryRepository
 from application.subscriptions import (
     MySubscriptionReader,
     SubscriptionPlanReader,
@@ -23,13 +25,18 @@ from application.subscriptions import (
     SubscriptionRepository,
 )
 from application.trainer_notifications import (
-    TrainerNotificationDeliveryRepository,
     TrainerNotificationReader,
 )
 from application.training_sessions import (
     CurrentWeekScheduleReader,
     ScheduleRuleRepository,
     TrainingSessionRepository,
+)
+from infrastructure.database.athlete_notifications import (
+    SqlAlchemyAthleteNotificationReader,
+)
+from infrastructure.database.notification_delivery import (
+    SqlAlchemyNotificationDeliveryRepository,
 )
 from infrastructure.database.readers import (
     SqlAlchemyAthleteSelectionReader,
@@ -54,7 +61,6 @@ from infrastructure.database.repositories import (
     SqlAlchemyUserRepository,
 )
 from infrastructure.database.trainer_notifications import (
-    SqlAlchemyTrainerNotificationDeliveryRepository,
     SqlAlchemyTrainerNotificationReader,
 )
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
@@ -62,18 +68,25 @@ from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 class RepositoryProvider(Provider):
     @provide(scope=Scope.REQUEST)
+    def provide_athlete_notification_reader(
+        self,
+        session: AsyncSession,
+    ) -> AthleteNotificationReader:
+        return SqlAlchemyAthleteNotificationReader(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_notification_delivery_repository(
+        self,
+        session: AsyncSession,
+    ) -> NotificationDeliveryRepository:
+        return SqlAlchemyNotificationDeliveryRepository(session)
+
+    @provide(scope=Scope.REQUEST)
     def provide_trainer_notification_reader(
         self,
         session: AsyncSession,
     ) -> TrainerNotificationReader:
         return SqlAlchemyTrainerNotificationReader(session)
-
-    @provide(scope=Scope.REQUEST)
-    def provide_trainer_notification_delivery_repository(
-        self,
-        session: AsyncSession,
-    ) -> TrainerNotificationDeliveryRepository:
-        return SqlAlchemyTrainerNotificationDeliveryRepository(session)
 
     @provide(scope=Scope.REQUEST)
     def provide_attendance_repository(

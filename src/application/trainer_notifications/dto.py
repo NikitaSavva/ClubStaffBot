@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from application.notification_delivery import (
+    NotificationClaim,
+    NotificationClaimOutcome,
+)
 from domain.club import TrainingGroupType, TrainingSessionStatus
 
-
-class TrainerNotificationClaimOutcome(StrEnum):
-    ACQUIRED = "ACQUIRED"
-    ALREADY_SENT = "ALREADY_SENT"
-    TERMINAL_FAILED = "TERMINAL_FAILED"
-    IN_PROGRESS = "IN_PROGRESS"
+TrainerNotificationClaim = NotificationClaim
+TrainerNotificationClaimOutcome = NotificationClaimOutcome
 
 
 class NotifyTrainerOutcome(StrEnum):
@@ -43,13 +43,6 @@ class TrainerNotificationSession:
     group_name: str
     trainer_user_exists: bool
     trainer_telegram_id: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class TrainerNotificationClaim:
-    outcome: TrainerNotificationClaimOutcome
-    attempts: int
-    notification_id: int | None
 
 
 @dataclass(frozen=True, slots=True)

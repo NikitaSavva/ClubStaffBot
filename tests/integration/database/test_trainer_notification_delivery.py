@@ -190,6 +190,7 @@ async def claim(
             result = await SqlAlchemyTrainerNotificationDeliveryRepository(
                 session
             ).claim(
+                notification_type="TRAINER_SESSION_MINUS_5",
                 training_session_id=context.training_session_id,
                 recipient_user_id=context.user_id,
                 scheduled_at=NOW,

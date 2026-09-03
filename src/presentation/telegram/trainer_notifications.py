@@ -1,26 +1,19 @@
-import structlog
 from aiogram import Bot
-from aiogram.exceptions import (
-    TelegramAPIError,
-    TelegramNetworkError,
-    TelegramRetryAfter,
-    TelegramServerError,
-)
 
 from application.trainer_notifications import (
-    PermanentTrainerNotifierError,
-    RetryableTrainerNotifierError,
     TrainerNotificationMessage,
     TrainerNotifier,
 )
+from presentation.telegram.proactive_notifications import (
+    AiogramProactiveNotificationSender,
+)
 
-TELEGRAM_REQUEST_TIMEOUT_SECONDS = 20
-logger = structlog.get_logger()
+NOTIFICATION_TYPE = "TRAINER_SESSION_MINUS_5"
 
 
 class AiogramTrainerNotifier(TrainerNotifier):
     def __init__(self, bot: Bot) -> None:
-        self._bot = bot
+        self._sender = AiogramProactiveNotificationSender(bot)
 
     async def send(
         self,
@@ -28,36 +21,11 @@ class AiogramTrainerNotifier(TrainerNotifier):
         telegram_id: int,
         message: TrainerNotificationMessage,
     ) -> None:
-        try:
-            await self._bot.send_message(
-                chat_id=telegram_id,
-                text=format_trainer_notification(message),
-                request_timeout=TELEGRAM_REQUEST_TIMEOUT_SECONDS,
-            )
-        except TelegramRetryAfter as error:
-            logger.warning(
-                "trainer_notification_telegram_retry_after",
-                telegram_id=telegram_id,
-                retry_after_seconds=error.retry_after,
-                error_type=type(error).__name__,
-            )
-            raise RetryableTrainerNotifierError(
-                retry_after_seconds=error.retry_after
-            ) from error
-        except (TelegramNetworkError, TelegramServerError) as error:
-            logger.warning(
-                "trainer_notification_telegram_retryable_error",
-                telegram_id=telegram_id,
-                error_type=type(error).__name__,
-            )
-            raise RetryableTrainerNotifierError from error
-        except TelegramAPIError as error:
-            logger.error(
-                "trainer_notification_telegram_permanent_error",
-                telegram_id=telegram_id,
-                error_type=type(error).__name__,
-            )
-            raise PermanentTrainerNotifierError from error
+        await self._sender.send_text(
+            telegram_id=telegram_id,
+            text=format_trainer_notification(message),
+            notification_type=NOTIFICATION_TYPE,
+        )
 
 
 def format_trainer_notification(message: TrainerNotificationMessage) -> str:

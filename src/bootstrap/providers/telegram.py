@@ -3,8 +3,10 @@ from collections.abc import AsyncIterator
 from aiogram import Bot
 from dishka import Provider, Scope, provide
 
+from application.athlete_notifications import AthleteNotifier
 from application.trainer_notifications import TrainerNotifier
 from bootstrap.config import Settings
+from presentation.telegram.athlete_notifications import AiogramAthleteNotifier
 from presentation.telegram.screen import BannerFileIds, TelegramScreenRenderer
 from presentation.telegram.trainer_notifications import AiogramTrainerNotifier
 
@@ -21,6 +23,10 @@ class TelegramProvider(Provider):
     @provide(scope=Scope.APP)
     def provide_trainer_notifier(self, bot: Bot) -> TrainerNotifier:
         return AiogramTrainerNotifier(bot)
+
+    @provide(scope=Scope.APP)
+    def provide_athlete_notifier(self, bot: Bot) -> AthleteNotifier:
+        return AiogramAthleteNotifier(bot)
 
     @provide(scope=Scope.APP)
     def provide_screen_renderer(
