@@ -22,6 +22,10 @@ from application.subscriptions import (
     SubscriptionPlanRepository,
     SubscriptionRepository,
 )
+from application.trainer_notifications import (
+    TrainerNotificationDeliveryRepository,
+    TrainerNotificationReader,
+)
 from application.training_sessions import (
     CurrentWeekScheduleReader,
     ScheduleRuleRepository,
@@ -49,10 +53,28 @@ from infrastructure.database.repositories import (
     SqlAlchemyTrainingSessionRepository,
     SqlAlchemyUserRepository,
 )
+from infrastructure.database.trainer_notifications import (
+    SqlAlchemyTrainerNotificationDeliveryRepository,
+    SqlAlchemyTrainerNotificationReader,
+)
 from infrastructure.database.unit_of_work import SqlAlchemyUnitOfWork
 
 
 class RepositoryProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_trainer_notification_reader(
+        self,
+        session: AsyncSession,
+    ) -> TrainerNotificationReader:
+        return SqlAlchemyTrainerNotificationReader(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_trainer_notification_delivery_repository(
+        self,
+        session: AsyncSession,
+    ) -> TrainerNotificationDeliveryRepository:
+        return SqlAlchemyTrainerNotificationDeliveryRepository(session)
+
     @provide(scope=Scope.REQUEST)
     def provide_attendance_repository(
         self,

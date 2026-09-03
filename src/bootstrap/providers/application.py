@@ -60,6 +60,13 @@ from application.subscriptions import (
     SubscriptionPlanRepository,
     SubscriptionRepository,
 )
+from application.trainer_notifications import (
+    FindSessionsForTrainerNotificationInteractor,
+    NotifyTrainerBeforeSessionInteractor,
+    TrainerNotificationDeliveryRepository,
+    TrainerNotificationReader,
+    TrainerNotifier,
+)
 from application.training_sessions import (
     CurrentWeekScheduleReader,
     GenerateTrainingSessionsInteractor,
@@ -72,6 +79,36 @@ from bootstrap.config import Settings
 
 
 class ApplicationProvider(Provider):
+    @provide(scope=Scope.REQUEST)
+    def provide_find_trainer_notification_sessions_interactor(
+        self,
+        reader: TrainerNotificationReader,
+        clock: Clock,
+    ) -> FindSessionsForTrainerNotificationInteractor:
+        return FindSessionsForTrainerNotificationInteractor(
+            reader=reader,
+            clock=clock,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_notify_trainer_before_session_interactor(
+        self,
+        reader: TrainerNotificationReader,
+        delivery_repository: TrainerNotificationDeliveryRepository,
+        notifier: TrainerNotifier,
+        unit_of_work: UnitOfWork,
+        clock: Clock,
+        club_timezone: ZoneInfo,
+    ) -> NotifyTrainerBeforeSessionInteractor:
+        return NotifyTrainerBeforeSessionInteractor(
+            reader=reader,
+            delivery_repository=delivery_repository,
+            notifier=notifier,
+            unit_of_work=unit_of_work,
+            clock=clock,
+            club_timezone=club_timezone,
+        )
+
     @provide(scope=Scope.REQUEST)
     def provide_confirm_attendance_interactor(
         self,
