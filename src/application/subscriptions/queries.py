@@ -9,3 +9,9 @@ class ListActiveSubscriptionPlansQuery:
 @dataclass(frozen=True, slots=True)
 class GetMySubscriptionQuery:
     actor_telegram_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class GetLatestAthleteSubscriptionQuery:
+    actor_telegram_id: int
+    athlete_id: int

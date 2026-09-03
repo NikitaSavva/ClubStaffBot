@@ -4,6 +4,7 @@ from infrastructure.database.readers.identity import (
     SqlAlchemyBotUserReader,
 )
 from infrastructure.database.readers.subscriptions import (
+    SqlAlchemyLatestAthleteSubscriptionReader,
     SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "SqlAlchemyAthleteSelectionReader",
     "SqlAlchemyBotUserReader",
     "SqlAlchemyCurrentWeekScheduleReader",
+    "SqlAlchemyLatestAthleteSubscriptionReader",
     "SqlAlchemyMySubscriptionReader",
     "SqlAlchemySubscriptionPlanReader",
     "SqlAlchemyTrainingGroupReader",

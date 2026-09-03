@@ -19,6 +19,7 @@ from application.identity.ports import (
 )
 from application.notification_delivery import NotificationDeliveryRepository
 from application.subscriptions import (
+    LatestAthleteSubscriptionReader,
     MySubscriptionReader,
     SubscriptionPlanReader,
     SubscriptionPlanRepository,
@@ -42,6 +43,7 @@ from infrastructure.database.readers import (
     SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
     SqlAlchemyCurrentWeekScheduleReader,
+    SqlAlchemyLatestAthleteSubscriptionReader,
     SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
@@ -217,3 +219,10 @@ class RepositoryProvider(Provider):
     @provide(scope=Scope.REQUEST)
     def provide_unit_of_work(self, session: AsyncSession) -> UnitOfWork:
         return SqlAlchemyUnitOfWork(session)
+
+    @provide(scope=Scope.REQUEST)
+    def provide_latest_athlete_subscription_reader(
+        self,
+        session: AsyncSession,
+    ) -> LatestAthleteSubscriptionReader:
+        return SqlAlchemyLatestAthleteSubscriptionReader(session)

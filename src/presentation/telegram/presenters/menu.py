@@ -139,6 +139,9 @@ def build_role_panel_screen(
         )
         if activate_subscription is not None:
             rows.append((_menu_item_button(activate_subscription),))
+        view_subscription = items.get("administrator.view_subscription")
+        if view_subscription is not None:
+            rows.append((_menu_item_button(view_subscription),))
         primary = items.get("administrator.create_athlete")
         if primary is not None:
             rows.append((_menu_item_button(primary),))

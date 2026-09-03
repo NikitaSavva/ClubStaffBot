@@ -60,7 +60,10 @@ from application.notification_delivery import NotificationDeliveryRepository
 from application.scanner import ConfirmAttendanceByQrInteractor
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
+    CorrectSubscriptionInteractor,
+    GetLatestAthleteSubscriptionInteractor,
     GetMySubscriptionInteractor,
+    LatestAthleteSubscriptionReader,
     ListActiveSubscriptionPlansInteractor,
     MySubscriptionReader,
     SubscriptionPlanReader,
@@ -542,4 +545,38 @@ class ApplicationProvider(Provider):
             clock=clock,
             token_hasher=token_hasher,
             link_athlete_account_interactor=link_athlete_account_interactor,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_get_latest_athlete_subscription_interactor(
+        self,
+        user_repository: UserRepository,
+        role_repository: RoleRepository,
+        reader: LatestAthleteSubscriptionReader,
+    ) -> GetLatestAthleteSubscriptionInteractor:
+        return GetLatestAthleteSubscriptionInteractor(
+            user_repository=user_repository,
+            role_repository=role_repository,
+            reader=reader,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def provide_correct_subscription_interactor(
+        self,
+        user_repository: UserRepository,
+        athlete_repository: AthleteRepository,
+        role_repository: RoleRepository,
+        subscription_plan_repository: SubscriptionPlanRepository,
+        subscription_repository: SubscriptionRepository,
+        audit_log_repository: AuditLogRepository,
+        unit_of_work: UnitOfWork,
+    ) -> CorrectSubscriptionInteractor:
+        return CorrectSubscriptionInteractor(
+            user_repository=user_repository,
+            athlete_repository=athlete_repository,
+            role_repository=role_repository,
+            subscription_plan_repository=subscription_plan_repository,
+            subscription_repository=subscription_repository,
+            audit_log_repository=audit_log_repository,
+            unit_of_work=unit_of_work,
         )

@@ -101,6 +101,10 @@ def build_interactor(
                         action_id="administrator.activate_subscription",
                         title="Выдать абонемент",
                     ),
+                    MenuItem(
+                        action_id="administrator.view_subscription",
+                        title="Посмотреть абонемент",
+                    ),
                 MenuItem(
                     action_id="administrator.create_athlete",
                     title="Добавить спортсмена",
@@ -142,6 +146,10 @@ def build_interactor(
                     MenuItem(
                         action_id="administrator.activate_subscription",
                         title="Выдать абонемент",
+                    ),
+                    MenuItem(
+                        action_id="administrator.view_subscription",
+                        title="Посмотреть абонемент",
                     ),
                 MenuItem(
                     action_id="administrator.create_athlete",
@@ -230,6 +238,7 @@ async def test_multiple_roles_produce_deduplicated_mode_entries() -> None:
         "administrator.confirm_attendance",
         "administrator.schedule",
         "administrator.activate_subscription",
+        "administrator.view_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
         "administrator.assign_trainer",
@@ -259,6 +268,7 @@ async def test_owner_and_administrator_do_not_duplicate_admin_actions() -> None:
         "administrator.confirm_attendance",
         "administrator.schedule",
         "administrator.activate_subscription",
+        "administrator.view_subscription",
         "administrator.create_athlete",
         "administrator.link_athlete_account",
         "administrator.assign_trainer",

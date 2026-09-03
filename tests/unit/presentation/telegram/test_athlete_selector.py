@@ -82,3 +82,38 @@ def test_keyboard_keeps_purpose_and_page_without_search_value() -> None:
     assert "← Предыдущая" in callbacks.values()
     assert "Следующая →" in callbacks.values()
     assert "🔎 Поиск" in callbacks.values()
+
+
+def test_keyboard_supports_subscription_view_purpose() -> None:
+    item = AthleteSelectionItem(
+        athlete_id=12,
+        athlete_public_id=UUID(int=12),
+        first_name="Иван",
+        last_name="Иванов",
+        birth_date=None,
+    )
+
+    keyboard = build_athlete_selector_keyboard(
+        purpose=AthleteSelectionPurpose.SUBSCRIPTION_VIEW,
+        result=AthleteSelectionPage(
+            items=(item,),
+            page=0,
+            has_previous=False,
+            has_next=False,
+        ),
+        search=None,
+    )
+
+    callbacks = {
+        button.callback_data: button.text
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    }
+    callback = AthleteSelectorCallback(
+        purpose=AthleteSelectionPurpose.SUBSCRIPTION_VIEW,
+        action=AthleteSelectorAction.SELECT,
+        value=str(item.athlete_id),
+    ).pack()
+    assert callbacks[callback] == "Иван Иванов"
+    assert len(callback.encode()) <= 64

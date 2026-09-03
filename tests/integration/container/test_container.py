@@ -62,7 +62,10 @@ from application.scanner import (
 )
 from application.subscriptions import (
     ActivateSubscriptionInteractor,
+    CorrectSubscriptionInteractor,
+    GetLatestAthleteSubscriptionInteractor,
     GetMySubscriptionInteractor,
+    LatestAthleteSubscriptionReader,
     ListActiveSubscriptionPlansInteractor,
     MySubscriptionReader,
     SubscriptionPlanReader,
@@ -97,6 +100,7 @@ from infrastructure.database.readers import (
     SqlAlchemyAthleteSelectionReader,
     SqlAlchemyBotUserReader,
     SqlAlchemyCurrentWeekScheduleReader,
+    SqlAlchemyLatestAthleteSubscriptionReader,
     SqlAlchemyMySubscriptionReader,
     SqlAlchemySubscriptionPlanReader,
     SqlAlchemyTrainingGroupReader,
@@ -220,6 +224,9 @@ async def test_container_resolves_app_and_request_dependencies(
             my_subscription_reader = await request_container.get(
                 MySubscriptionReader
             )
+            latest_subscription_reader = await request_container.get(
+                LatestAthleteSubscriptionReader
+            )
             subscription_plan_repository = await request_container.get(
                 SubscriptionPlanRepository
             )
@@ -256,6 +263,12 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             get_my_subscription_interactor = await request_container.get(
                 GetMySubscriptionInteractor
+            )
+            get_latest_subscription_interactor = await request_container.get(
+                GetLatestAthleteSubscriptionInteractor
+            )
+            correct_subscription_interactor = await request_container.get(
+                CorrectSubscriptionInteractor
             )
             get_athlete_qr_token_interactor = await request_container.get(
                 GetAthleteQrTokenInteractor
@@ -389,6 +402,10 @@ async def test_container_resolves_app_and_request_dependencies(
                 SqlAlchemyMySubscriptionReader,
             )
             assert isinstance(
+                latest_subscription_reader,
+                SqlAlchemyLatestAthleteSubscriptionReader,
+            )
+            assert isinstance(
                 subscription_plan_repository,
                 SqlAlchemySubscriptionPlanRepository,
             )
@@ -424,6 +441,14 @@ async def test_container_resolves_app_and_request_dependencies(
             assert isinstance(
                 get_my_subscription_interactor,
                 GetMySubscriptionInteractor,
+            )
+            assert isinstance(
+                get_latest_subscription_interactor,
+                GetLatestAthleteSubscriptionInteractor,
+            )
+            assert isinstance(
+                correct_subscription_interactor,
+                CorrectSubscriptionInteractor,
             )
             assert isinstance(
                 get_athlete_qr_token_interactor,
@@ -525,6 +550,7 @@ async def test_container_resolves_app_and_request_dependencies(
             assert audit_repository._session is first_session
             assert subscription_plan_reader._session is first_session
             assert my_subscription_reader._session is first_session
+            assert latest_subscription_reader._session is first_session
             assert subscription_plan_repository._session is first_session
             assert subscription_repository._session is first_session
             assert unit_of_work._session is first_session
@@ -543,6 +569,18 @@ async def test_container_resolves_app_and_request_dependencies(
             )
             assert get_my_subscription_interactor._reader is (
                 my_subscription_reader
+            )
+            assert get_latest_subscription_interactor._reader is (
+                latest_subscription_reader
+            )
+            assert correct_subscription_interactor._subscriptions is (
+                subscription_repository
+            )
+            assert correct_subscription_interactor._plans is (
+                subscription_plan_repository
+            )
+            assert correct_subscription_interactor._audit_log is (
+                audit_repository
             )
             assert schedule_interactor._subscriptions is (
                 my_subscription_reader
