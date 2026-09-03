@@ -4,7 +4,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from aiogram import Bot
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramForbiddenError,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+)
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -74,6 +78,24 @@ def test_formats_materialized_start_end_counts_and_people_word() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("count", "word"),
+    [
+        (1, "человек"),
+        (2, "человека"),
+        (5, "человек"),
+        (11, "человек"),
+        (21, "человек"),
+        (22, "человека"),
+        (25, "человек"),
+    ],
+)
+def test_people_word_boundaries(count: int, word: str) -> None:
+    assert f"Ожидалось: {count} {word}" in format_trainer_notification(
+        message(expected=count)
+    )
+
+
 async def test_proactive_sender_does_not_change_active_ui_message() -> None:
     state = make_state()
     active = ActiveUiMessage(
@@ -118,6 +140,20 @@ async def test_retry_after_is_translated_with_server_delay() -> None:
         await notifier.send(telegram_id=42, message=message())
 
     assert raised.value.retry_after_seconds == 90
+
+
+async def test_network_error_is_retryable() -> None:
+    bot = FakeBot()
+    bot.error = TelegramNetworkError(
+        method=SendMessage(chat_id=42, text="test"),
+        message="network unavailable",
+    )
+    notifier = AiogramTrainerNotifier(cast(Bot, bot))
+
+    with pytest.raises(RetryableTrainerNotifierError) as raised:
+        await notifier.send(telegram_id=42, message=message())
+
+    assert raised.value.retry_after_seconds is None
 
 
 async def test_forbidden_error_is_terminal() -> None:

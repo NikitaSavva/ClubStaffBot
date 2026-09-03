@@ -49,6 +49,7 @@ class TrainerNotificationSession:
 class TrainerNotificationClaim:
     outcome: TrainerNotificationClaimOutcome
     attempts: int
+    notification_id: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,3 +67,4 @@ class NotifyTrainerBeforeSessionResult:
     outcome: NotifyTrainerOutcome
     training_session_id: int
     attempts: int = 0
+    notification_id: int | None = None

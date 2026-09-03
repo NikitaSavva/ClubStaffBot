@@ -9,9 +9,9 @@ from application.trainer_notifications.dto import (
     FindTrainerNotificationSessionsResult,
     NotifyTrainerBeforeSessionResult,
     NotifyTrainerOutcome,
+    TrainerNotificationClaim,
     TrainerNotificationClaimOutcome,
     TrainerNotificationMessage,
-    TrainerNotificationSession,
 )
 from application.trainer_notifications.errors import (
     PermanentTrainerNotifierError,
@@ -80,43 +80,25 @@ class NotifyTrainerBeforeSessionInteractor:
     ) -> NotifyTrainerBeforeSessionResult:
         reference_now = self._clock.now()
         async with self._uow:
-            session = await self._reader.get_session(
+            preliminary_session = await self._reader.get_session(
                 command.training_session_id
             )
-            if session is None:
+            if preliminary_session is None:
                 return self._result(
                     command,
                     NotifyTrainerOutcome.SESSION_NOT_FOUND,
                 )
 
-            key = trainer_notification_idempotency_key(session.id)
-            if session.status is TrainingSessionStatus.CANCELLED:
-                await self._terminalize_without_send(
-                    session=session,
-                    idempotency_key=key,
-                    reference_now=reference_now,
-                )
-                return self._result(command, NotifyTrainerOutcome.CANCELLED)
-
-            if reference_now >= session.starts_at:
-                await self._terminalize_without_send(
-                    session=session,
-                    idempotency_key=key,
-                    reference_now=reference_now,
-                )
-                return self._result(
-                    command,
-                    NotifyTrainerOutcome.SESSION_STARTED,
-                )
-
-            if session.starts_at > reference_now + NOTIFY_BEFORE:
+            key = trainer_notification_idempotency_key(preliminary_session.id)
+            if preliminary_session.starts_at > reference_now + NOTIFY_BEFORE:
                 released = False
-                if command.delivery_attempt > 1:
+                if command.notification_id is not None:
                     released = await self._deliveries.release_pending(
+                        notification_id=command.notification_id,
                         idempotency_key=key,
                         expected_attempts=command.delivery_attempt - 1,
                     )
-                else:
+                elif command.delivery_attempt == 1:
                     released = await self._deliveries.release_stale_pending(
                         idempotency_key=key,
                         stale_pending_before=(
@@ -125,39 +107,107 @@ class NotifyTrainerBeforeSessionInteractor:
                     )
                 if released:
                     await self._uow.commit()
-                return self._result(command, NotifyTrainerOutcome.NOT_DUE)
-
-            if not session.trainer_user_exists:
                 return self._result(
                     command,
-                    NotifyTrainerOutcome.TRAINER_UNAVAILABLE,
+                    NotifyTrainerOutcome.NOT_DUE,
+                    attempts=max(command.delivery_attempt - 1, 0),
                 )
 
-            if session.trainer_telegram_id is None:
-                await self._terminalize_without_send(
-                    session=session,
-                    idempotency_key=key,
-                    reference_now=reference_now,
-                )
+            if not preliminary_session.trainer_user_exists:
                 return self._result(
                     command,
                     NotifyTrainerOutcome.TRAINER_UNAVAILABLE,
                 )
 
             claim = await self._deliveries.claim(
-                training_session_id=session.id,
-                recipient_user_id=session.trainer_id,
-                scheduled_at=session.starts_at - NOTIFY_BEFORE,
+                training_session_id=preliminary_session.id,
+                recipient_user_id=preliminary_session.trainer_id,
+                scheduled_at=preliminary_session.starts_at - NOTIFY_BEFORE,
                 idempotency_key=key,
                 delivery_attempt=command.delivery_attempt,
+                notification_id=command.notification_id,
                 stale_pending_before=reference_now - STALE_PENDING_AFTER,
                 max_attempts=MAX_DELIVERY_ATTEMPTS,
                 reference_now=reference_now,
             )
-            claim_result = self._claim_result(command, claim.outcome)
+            claim_result = self._claim_result(claim.outcome)
             if claim_result is not None:
-                return claim_result
+                await self._uow.commit()
+                return NotifyTrainerBeforeSessionResult(
+                    outcome=claim_result,
+                    training_session_id=command.training_session_id,
+                    attempts=claim.attempts,
+                    notification_id=claim.notification_id,
+                )
+            if claim.notification_id is None:
+                return self._result(command, NotifyTrainerOutcome.IN_PROGRESS)
+            await self._uow.commit()
 
+        async with self._uow:
+            session = await self._reader.get_session(command.training_session_id)
+            if session is None:
+                return await self._terminal_result(
+                    command=command,
+                    claim=claim,
+                    idempotency_key=key,
+                    reference_now=reference_now,
+                    outcome=NotifyTrainerOutcome.SESSION_NOT_FOUND,
+                )
+            if session.status is TrainingSessionStatus.CANCELLED:
+                return await self._terminal_result(
+                    command=command,
+                    claim=claim,
+                    idempotency_key=key,
+                    reference_now=reference_now,
+                    outcome=NotifyTrainerOutcome.CANCELLED,
+                )
+            if reference_now >= session.starts_at:
+                return await self._terminal_result(
+                    command=command,
+                    claim=claim,
+                    idempotency_key=key,
+                    reference_now=reference_now,
+                    outcome=NotifyTrainerOutcome.SESSION_STARTED,
+                )
+            if session.starts_at > reference_now + NOTIFY_BEFORE:
+                released = await self._deliveries.release_pending(
+                    notification_id=claim.notification_id,
+                    idempotency_key=key,
+                    expected_attempts=claim.attempts,
+                )
+                if released:
+                    await self._uow.commit()
+                return self._owned_result(
+                    command,
+                    claim,
+                    (
+                        NotifyTrainerOutcome.NOT_DUE
+                        if released
+                        else NotifyTrainerOutcome.IN_PROGRESS
+                    ),
+                )
+            if not session.trainer_user_exists or session.trainer_telegram_id is None:
+                return await self._terminal_result(
+                    command=command,
+                    claim=claim,
+                    idempotency_key=key,
+                    reference_now=reference_now,
+                    outcome=NotifyTrainerOutcome.TRAINER_UNAVAILABLE,
+                )
+            refreshed = await self._deliveries.refresh_pending(
+                notification_id=claim.notification_id,
+                idempotency_key=key,
+                expected_attempts=claim.attempts,
+                recipient_user_id=session.trainer_id,
+                scheduled_at=session.starts_at - NOTIFY_BEFORE,
+                reference_now=reference_now,
+            )
+            if not refreshed:
+                return self._owned_result(
+                    command,
+                    claim,
+                    NotifyTrainerOutcome.IN_PROGRESS,
+                )
             expected_count = await self._reader.count_expected(
                 training_group_id=session.group_id,
                 group_is_regular=(
@@ -182,16 +232,21 @@ class NotifyTrainerBeforeSessionInteractor:
                 message=message,
             )
         except PermanentTrainerNotifierError:
-            await self._mark_failed(
-                session=session,
+            failed = await self._mark_failed(
+                notification_id=claim.notification_id,
                 idempotency_key=key,
                 attempts=claim.attempts,
                 reference_now=reference_now,
             )
             return NotifyTrainerBeforeSessionResult(
-                outcome=NotifyTrainerOutcome.TERMINAL_FAILED,
+                outcome=(
+                    NotifyTrainerOutcome.TERMINAL_FAILED
+                    if failed
+                    else NotifyTrainerOutcome.IN_PROGRESS
+                ),
                 training_session_id=session.id,
                 attempts=claim.attempts,
+                notification_id=claim.notification_id,
             )
         except RetryableTrainerNotifierError as error:
             retry_after = error.retry_after_seconds
@@ -201,88 +256,113 @@ class NotifyTrainerBeforeSessionInteractor:
                 >= session.starts_at
             )
             if claim.attempts >= MAX_DELIVERY_ATTEMPTS or retry_misses_deadline:
-                await self._mark_failed(
-                    session=session,
+                failed = await self._mark_failed(
+                    notification_id=claim.notification_id,
                     idempotency_key=key,
                     attempts=claim.attempts,
                     reference_now=reference_now,
                 )
                 return NotifyTrainerBeforeSessionResult(
-                    outcome=NotifyTrainerOutcome.TERMINAL_FAILED,
+                    outcome=(
+                        NotifyTrainerOutcome.TERMINAL_FAILED
+                        if failed
+                        else NotifyTrainerOutcome.IN_PROGRESS
+                    ),
                     training_session_id=session.id,
                     attempts=claim.attempts,
+                    notification_id=claim.notification_id,
                 )
             raise RetryableTrainerNotificationDeliveryError(
                 training_session_id=session.id,
+                notification_id=claim.notification_id,
+                delivery_attempt=claim.attempts,
                 starts_at=session.starts_at,
                 retry_after_seconds=retry_after,
             ) from error
 
         async with self._uow:
-            await self._deliveries.mark_sent(
+            sent = await self._deliveries.mark_sent(
+                notification_id=claim.notification_id,
                 idempotency_key=key,
                 attempts=claim.attempts,
                 sent_at=reference_now,
             )
-            await self._uow.commit()
+            if sent:
+                await self._uow.commit()
         return NotifyTrainerBeforeSessionResult(
-            outcome=NotifyTrainerOutcome.SENT,
+            outcome=(
+                NotifyTrainerOutcome.SENT
+                if sent
+                else NotifyTrainerOutcome.IN_PROGRESS
+            ),
             training_session_id=session.id,
             attempts=claim.attempts,
+            notification_id=claim.notification_id,
         )
 
-    async def _terminalize_without_send(
+    async def _terminal_result(
         self,
         *,
-        session: TrainerNotificationSession,
+        command: NotifyTrainerBeforeSessionCommand,
+        claim: TrainerNotificationClaim,
         idempotency_key: str,
         reference_now: datetime,
-    ) -> None:
-        await self._deliveries.mark_failed(
-            training_session_id=session.id,
-            recipient_user_id=session.trainer_id,
-            scheduled_at=session.starts_at - NOTIFY_BEFORE,
+        outcome: NotifyTrainerOutcome,
+    ) -> NotifyTrainerBeforeSessionResult:
+        if claim.notification_id is None:
+            return self._result(command, NotifyTrainerOutcome.IN_PROGRESS)
+        failed = await self._deliveries.mark_failed(
+            notification_id=claim.notification_id,
             idempotency_key=idempotency_key,
-            expected_attempts=None,
+            expected_attempts=claim.attempts,
             reference_now=reference_now,
         )
-        await self._uow.commit()
+        if failed:
+            await self._uow.commit()
+        return self._owned_result(
+            command,
+            claim,
+            outcome if failed else NotifyTrainerOutcome.IN_PROGRESS,
+        )
 
     async def _mark_failed(
         self,
         *,
-        session: TrainerNotificationSession,
+        notification_id: int,
         idempotency_key: str,
         attempts: int,
         reference_now: datetime,
-    ) -> None:
+    ) -> bool:
         async with self._uow:
-            await self._deliveries.mark_failed(
-                training_session_id=session.id,
-                recipient_user_id=session.trainer_id,
-                scheduled_at=session.starts_at - NOTIFY_BEFORE,
+            failed = await self._deliveries.mark_failed(
+                notification_id=notification_id,
                 idempotency_key=idempotency_key,
                 expected_attempts=attempts,
                 reference_now=reference_now,
             )
-            await self._uow.commit()
+            if failed:
+                await self._uow.commit()
+            return failed
 
     @staticmethod
     def _result(
         command: NotifyTrainerBeforeSessionCommand,
         outcome: NotifyTrainerOutcome,
+        *,
+        attempts: int = 0,
     ) -> NotifyTrainerBeforeSessionResult:
         return NotifyTrainerBeforeSessionResult(
             outcome=outcome,
             training_session_id=command.training_session_id,
+            attempts=attempts,
+            notification_id=command.notification_id,
         )
 
     @staticmethod
     def _claim_result(
-        command: NotifyTrainerBeforeSessionCommand,
         outcome: TrainerNotificationClaimOutcome,
-    ) -> NotifyTrainerBeforeSessionResult | None:
-        mapped = {
+    ) -> NotifyTrainerOutcome | None:
+        return {
             TrainerNotificationClaimOutcome.ALREADY_SENT: (
                 NotifyTrainerOutcome.ALREADY_SENT
             ),
@@ -293,8 +373,16 @@ class NotifyTrainerBeforeSessionInteractor:
                 NotifyTrainerOutcome.IN_PROGRESS
             ),
         }.get(outcome)
-        return (
-            NotifyTrainerBeforeSessionInteractor._result(command, mapped)
-            if mapped is not None
-            else None
+
+    @staticmethod
+    def _owned_result(
+        command: NotifyTrainerBeforeSessionCommand,
+        claim: TrainerNotificationClaim,
+        outcome: NotifyTrainerOutcome,
+    ) -> NotifyTrainerBeforeSessionResult:
+        return NotifyTrainerBeforeSessionResult(
+            outcome=outcome,
+            training_session_id=command.training_session_id,
+            attempts=claim.attempts,
+            notification_id=claim.notification_id,
         )

@@ -208,57 +208,70 @@ class SqlAlchemyTrainerNotificationDeliveryRepository(
         scheduled_at: datetime,
         idempotency_key: str,
         delivery_attempt: int,
+        notification_id: int | None,
         stale_pending_before: datetime,
         max_attempts: int,
         reference_now: datetime,
     ) -> TrainerNotificationClaim:
         if delivery_attempt == 1:
-            inserted_attempts = await self._session.scalar(
-                insert(NotificationModel)
-                .values(
-                    recipient_user_id=recipient_user_id,
-                    training_session_id=training_session_id,
-                    type=NOTIFICATION_TYPE,
-                    scheduled_at=scheduled_at,
-                    sent_at=None,
-                    status=NotificationStatus.PENDING,
-                    idempotency_key=idempotency_key,
-                    attempts=1,
-                    created_at=reference_now,
-                    updated_at=reference_now,
+            inserted = (
+                await self._session.execute(
+                    insert(NotificationModel)
+                    .values(
+                        recipient_user_id=recipient_user_id,
+                        training_session_id=training_session_id,
+                        type=NOTIFICATION_TYPE,
+                        scheduled_at=scheduled_at,
+                        sent_at=None,
+                        status=NotificationStatus.PENDING,
+                        idempotency_key=idempotency_key,
+                        attempts=1,
+                        created_at=reference_now,
+                        updated_at=reference_now,
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=(NotificationModel.idempotency_key,)
+                    )
+                    .returning(
+                        NotificationModel.id,
+                        NotificationModel.attempts,
+                    )
                 )
-                .on_conflict_do_nothing(
-                    index_elements=(NotificationModel.idempotency_key,)
-                )
-                .returning(NotificationModel.attempts)
-            )
-            if inserted_attempts is not None:
+            ).one_or_none()
+            if inserted is not None:
                 return TrainerNotificationClaim(
                     outcome=TrainerNotificationClaimOutcome.ACQUIRED,
-                    attempts=inserted_attempts,
+                    attempts=inserted.attempts,
+                    notification_id=inserted.id,
                 )
 
-            reclaimed_attempts = await self._session.scalar(
-                update(NotificationModel)
-                .where(
-                    NotificationModel.idempotency_key == idempotency_key,
-                    NotificationModel.status == NotificationStatus.PENDING,
-                    NotificationModel.updated_at <= stale_pending_before,
-                    NotificationModel.attempts < max_attempts,
+            reclaimed = (
+                await self._session.execute(
+                    update(NotificationModel)
+                    .where(
+                        NotificationModel.idempotency_key == idempotency_key,
+                        NotificationModel.status == NotificationStatus.PENDING,
+                        NotificationModel.updated_at <= stale_pending_before,
+                        NotificationModel.attempts < max_attempts,
+                    )
+                    .values(
+                        recipient_user_id=recipient_user_id,
+                        training_session_id=training_session_id,
+                        scheduled_at=scheduled_at,
+                        attempts=NotificationModel.attempts + 1,
+                        updated_at=reference_now,
+                    )
+                    .returning(
+                        NotificationModel.id,
+                        NotificationModel.attempts,
+                    )
                 )
-                .values(
-                    recipient_user_id=recipient_user_id,
-                    training_session_id=training_session_id,
-                    scheduled_at=scheduled_at,
-                    attempts=NotificationModel.attempts + 1,
-                    updated_at=reference_now,
-                )
-                .returning(NotificationModel.attempts)
-            )
-            if reclaimed_attempts is not None:
+            ).one_or_none()
+            if reclaimed is not None:
                 return TrainerNotificationClaim(
                     outcome=TrainerNotificationClaimOutcome.ACQUIRED,
-                    attempts=reclaimed_attempts,
+                    attempts=reclaimed.attempts,
+                    notification_id=reclaimed.id,
                 )
 
             await self._terminalize_exhausted_stale(
@@ -268,34 +281,57 @@ class SqlAlchemyTrainerNotificationDeliveryRepository(
                 reference_now=reference_now,
             )
         else:
-            resumed_attempts = await self._session.scalar(
-                update(NotificationModel)
-                .where(
-                    NotificationModel.idempotency_key == idempotency_key,
-                    NotificationModel.status == NotificationStatus.PENDING,
-                    NotificationModel.attempts == delivery_attempt - 1,
+            if notification_id is None:
+                return TrainerNotificationClaim(
+                    outcome=TrainerNotificationClaimOutcome.IN_PROGRESS,
+                    attempts=0,
+                    notification_id=None,
                 )
-                .values(
-                    recipient_user_id=recipient_user_id,
-                    training_session_id=training_session_id,
-                    scheduled_at=scheduled_at,
-                    attempts=delivery_attempt,
-                    updated_at=reference_now,
+            resumed = (
+                await self._session.execute(
+                    update(NotificationModel)
+                    .where(
+                        NotificationModel.id == notification_id,
+                        NotificationModel.idempotency_key == idempotency_key,
+                        NotificationModel.status == NotificationStatus.PENDING,
+                        NotificationModel.attempts == delivery_attempt - 1,
+                    )
+                    .values(
+                        recipient_user_id=recipient_user_id,
+                        training_session_id=training_session_id,
+                        scheduled_at=scheduled_at,
+                        attempts=delivery_attempt,
+                        updated_at=reference_now,
+                    )
+                    .returning(
+                        NotificationModel.id,
+                        NotificationModel.attempts,
+                    )
                 )
-                .returning(NotificationModel.attempts)
-            )
-            if resumed_attempts is not None:
+            ).one_or_none()
+            if resumed is not None:
                 return TrainerNotificationClaim(
                     outcome=TrainerNotificationClaimOutcome.ACQUIRED,
-                    attempts=resumed_attempts,
+                    attempts=resumed.attempts,
+                    notification_id=resumed.id,
                 )
 
         row = (
             await self._session.execute(
-                select(NotificationModel.status, NotificationModel.attempts)
+                select(
+                    NotificationModel.id,
+                    NotificationModel.status,
+                    NotificationModel.attempts,
+                )
                 .where(NotificationModel.idempotency_key == idempotency_key)
             )
-        ).one()
+        ).one_or_none()
+        if row is None:
+            return TrainerNotificationClaim(
+                outcome=TrainerNotificationClaimOutcome.IN_PROGRESS,
+                attempts=0,
+                notification_id=None,
+            )
         outcome = {
             NotificationStatus.SENT: (
                 TrainerNotificationClaimOutcome.ALREADY_SENT
@@ -307,18 +343,24 @@ class SqlAlchemyTrainerNotificationDeliveryRepository(
                 TrainerNotificationClaimOutcome.IN_PROGRESS
             ),
         }[row.status]
-        return TrainerNotificationClaim(outcome=outcome, attempts=row.attempts)
+        return TrainerNotificationClaim(
+            outcome=outcome,
+            attempts=row.attempts,
+            notification_id=row.id,
+        )
 
     async def mark_sent(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         attempts: int,
         sent_at: datetime,
     ) -> bool:
-        notification_id = await self._session.scalar(
+        sent_notification_id = await self._session.scalar(
             update(NotificationModel)
             .where(
+                NotificationModel.id == notification_id,
                 NotificationModel.idempotency_key == idempotency_key,
                 NotificationModel.status == NotificationStatus.PENDING,
                 NotificationModel.attempts == attempts,
@@ -330,64 +372,77 @@ class SqlAlchemyTrainerNotificationDeliveryRepository(
             )
             .returning(NotificationModel.id)
         )
-        return notification_id is not None
+        return sent_notification_id is not None
 
     async def mark_failed(
         self,
         *,
-        training_session_id: int,
-        recipient_user_id: int,
-        scheduled_at: datetime,
+        notification_id: int,
         idempotency_key: str,
-        expected_attempts: int | None,
+        expected_attempts: int,
         reference_now: datetime,
     ) -> bool:
-        statement = insert(NotificationModel).values(
-            recipient_user_id=recipient_user_id,
-            training_session_id=training_session_id,
-            type=NOTIFICATION_TYPE,
-            scheduled_at=scheduled_at,
-            sent_at=None,
-            status=NotificationStatus.FAILED,
-            idempotency_key=idempotency_key,
-            attempts=expected_attempts or 0,
-            created_at=reference_now,
-            updated_at=reference_now,
-        )
-        update_where = NotificationModel.status == NotificationStatus.PENDING
-        if expected_attempts is not None:
-            update_where = and_(
-                update_where,
+        failed_notification_id = await self._session.scalar(
+            update(NotificationModel)
+            .where(
+                NotificationModel.id == notification_id,
+                NotificationModel.idempotency_key == idempotency_key,
+                NotificationModel.status == NotificationStatus.PENDING,
                 NotificationModel.attempts == expected_attempts,
             )
-        notification_id = await self._session.scalar(
-            statement.on_conflict_do_update(
-                index_elements=(NotificationModel.idempotency_key,),
-                set_={
-                    "status": NotificationStatus.FAILED,
-                    "updated_at": reference_now,
-                },
-                where=update_where,
-            ).returning(NotificationModel.id)
+            .values(
+                status=NotificationStatus.FAILED,
+                updated_at=reference_now,
+            )
+            .returning(NotificationModel.id)
         )
-        return notification_id is not None
+        return failed_notification_id is not None
+
+    async def refresh_pending(
+        self,
+        *,
+        notification_id: int,
+        idempotency_key: str,
+        expected_attempts: int,
+        recipient_user_id: int,
+        scheduled_at: datetime,
+        reference_now: datetime,
+    ) -> bool:
+        refreshed_id = await self._session.scalar(
+            update(NotificationModel)
+            .where(
+                NotificationModel.id == notification_id,
+                NotificationModel.idempotency_key == idempotency_key,
+                NotificationModel.status == NotificationStatus.PENDING,
+                NotificationModel.attempts == expected_attempts,
+            )
+            .values(
+                recipient_user_id=recipient_user_id,
+                scheduled_at=scheduled_at,
+                updated_at=reference_now,
+            )
+            .returning(NotificationModel.id)
+        )
+        return refreshed_id is not None
 
     async def release_pending(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         expected_attempts: int,
     ) -> bool:
-        notification_id = await self._session.scalar(
+        released_notification_id = await self._session.scalar(
             delete(NotificationModel)
             .where(
+                NotificationModel.id == notification_id,
                 NotificationModel.idempotency_key == idempotency_key,
                 NotificationModel.status == NotificationStatus.PENDING,
                 NotificationModel.attempts == expected_attempts,
             )
             .returning(NotificationModel.id)
         )
-        return notification_id is not None
+        return released_notification_id is not None
 
     async def release_stale_pending(
         self,

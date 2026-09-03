@@ -39,6 +39,7 @@ async def notify_with_container(
     *,
     training_session_id: int,
     delivery_attempt: int,
+    notification_id: int | None,
 ) -> NotifyTrainerBeforeSessionResult:
     async with container() as request_container:
         interactor = await request_container.get(
@@ -48,6 +49,7 @@ async def notify_with_container(
             NotifyTrainerBeforeSessionCommand(
                 training_session_id=training_session_id,
                 delivery_attempt=delivery_attempt,
+                notification_id=notification_id,
             )
         )
 
@@ -65,6 +67,7 @@ async def run_notify(
     *,
     training_session_id: int,
     delivery_attempt: int,
+    notification_id: int | None,
 ) -> NotifyTrainerBeforeSessionResult:
     settings = Settings()  # type: ignore[call-arg]
     container = create_container(settings)
@@ -73,6 +76,7 @@ async def run_notify(
             container,
             training_session_id=training_session_id,
             delivery_attempt=delivery_attempt,
+            notification_id=notification_id,
         )
     finally:
         await container.close()
@@ -82,7 +86,11 @@ async def run_notify(
 def poll_trainer_notifications() -> dict[str, int | str]:
     result = asyncio.run(run_find())
     for training_session_id in result.training_session_ids:
-        notify_trainer_before_session.delay(training_session_id)
+        notify_trainer_before_session.delay(
+            training_session_id=training_session_id,
+            delivery_attempt=1,
+            notification_id=None,
+        )
     logger.info(
         "trainer_notification_poll_completed",
         reference_now=result.reference_now.isoformat(),
@@ -101,38 +109,45 @@ def poll_trainer_notifications() -> dict[str, int | str]:
 )  # type: ignore[untyped-decorator]
 def notify_trainer_before_session(
     task: Any,
+    *,
     training_session_id: int,
     delivery_attempt: int = 1,
+    notification_id: int | None = None,
 ) -> dict[str, int | str]:
     logger.info(
         "trainer_notification_processing",
         training_session_id=training_session_id,
         delivery_attempt=delivery_attempt,
+        notification_id=notification_id,
     )
     try:
         result = asyncio.run(
             run_notify(
                 training_session_id=training_session_id,
                 delivery_attempt=delivery_attempt,
+                notification_id=notification_id,
             )
         )
     except RetryableTrainerNotificationDeliveryError as error:
         countdown = error.retry_after_seconds or (
-            30 * (2 ** (delivery_attempt - 1))
+            30 * (2 ** (error.delivery_attempt - 1))
         )
         logger.warning(
             "trainer_notification_retry_scheduled",
             training_session_id=training_session_id,
-            delivery_attempt=delivery_attempt,
-            next_delivery_attempt=delivery_attempt + 1,
+            delivery_attempt=error.delivery_attempt,
+            next_delivery_attempt=error.delivery_attempt + 1,
+            notification_id=error.notification_id,
             countdown_seconds=countdown,
         )
         raise task.retry(
             exc=error,
             countdown=countdown,
+            args=(),
             kwargs={
                 "training_session_id": training_session_id,
-                "delivery_attempt": delivery_attempt + 1,
+                "delivery_attempt": error.delivery_attempt + 1,
+                "notification_id": error.notification_id,
             },
         ) from error
 

@@ -42,6 +42,7 @@ class TrainerNotificationDeliveryRepository(Protocol):
         scheduled_at: datetime,
         idempotency_key: str,
         delivery_attempt: int,
+        notification_id: int | None,
         stale_pending_before: datetime,
         max_attempts: int,
         reference_now: datetime,
@@ -50,6 +51,7 @@ class TrainerNotificationDeliveryRepository(Protocol):
     async def mark_sent(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         attempts: int,
         sent_at: datetime,
@@ -58,17 +60,27 @@ class TrainerNotificationDeliveryRepository(Protocol):
     async def mark_failed(
         self,
         *,
-        training_session_id: int,
+        notification_id: int,
+        idempotency_key: str,
+        expected_attempts: int,
+        reference_now: datetime,
+    ) -> bool: ...
+
+    async def refresh_pending(
+        self,
+        *,
+        notification_id: int,
+        idempotency_key: str,
+        expected_attempts: int,
         recipient_user_id: int,
         scheduled_at: datetime,
-        idempotency_key: str,
-        expected_attempts: int | None,
         reference_now: datetime,
     ) -> bool: ...
 
     async def release_pending(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         expected_attempts: int,
     ) -> bool: ...

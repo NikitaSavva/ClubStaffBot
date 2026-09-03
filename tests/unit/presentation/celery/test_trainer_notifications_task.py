@@ -91,10 +91,11 @@ async def test_adapters_resolve_application_operations() -> None:
         container,
         training_session_id=42,
         delivery_attempt=3,
+        notification_id=100,
     )
 
     assert find_result.training_session_ids == (10, 20)
-    assert notify.command == NotifyTrainerBeforeSessionCommand(42, 3)
+    assert notify.command == NotifyTrainerBeforeSessionCommand(42, 3, 100)
     assert notify_result.outcome is NotifyTrainerOutcome.SENT
 
 
@@ -115,7 +116,18 @@ def test_poll_enqueues_one_task_per_session(
     result = trainer_notifications.poll_trainer_notifications.run()
 
     assert result["candidate_count"] == 2
-    assert [call.args for call in delay.call_args_list] == [(10,), (20,)]
+    assert [call.kwargs for call in delay.call_args_list] == [
+        {
+            "training_session_id": 10,
+            "delivery_attempt": 1,
+            "notification_id": None,
+        },
+        {
+            "training_session_id": 20,
+            "delivery_attempt": 1,
+            "notification_id": None,
+        },
+    ]
 
 
 def test_retryable_failure_schedules_numbered_retry(
@@ -125,9 +137,13 @@ def test_retryable_failure_schedules_numbered_retry(
         *,
         training_session_id: int,
         delivery_attempt: int,
+        notification_id: int | None,
     ) -> NotifyTrainerBeforeSessionResult:
+        assert notification_id == 100
         raise RetryableTrainerNotificationDeliveryError(
             training_session_id=training_session_id,
+            notification_id=100,
+            delivery_attempt=delivery_attempt,
             starts_at=NOW,
             retry_after_seconds=None,
         )
@@ -141,10 +157,222 @@ def test_retryable_failure_schedules_numbered_retry(
     )
 
     with pytest.raises(Retry):
-        trainer_notifications.notify_trainer_before_session.run(42, 2)
+        trainer_notifications.notify_trainer_before_session.run(
+            training_session_id=42,
+            delivery_attempt=2,
+            notification_id=100,
+        )
 
     assert retry.call_args.kwargs["countdown"] == 60
+    assert retry.call_args.kwargs["args"] == ()
     assert retry.call_args.kwargs["kwargs"] == {
         "training_session_id": 42,
         "delivery_attempt": 3,
+        "notification_id": 100,
     }
+
+
+def test_eager_retry_chain_executes_attempts_two_and_three(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int | None]] = []
+
+    async def retry_then_succeed(
+        *,
+        training_session_id: int,
+        delivery_attempt: int,
+        notification_id: int | None,
+    ) -> NotifyTrainerBeforeSessionResult:
+        assert training_session_id == 42
+        calls.append((delivery_attempt, notification_id))
+        if delivery_attempt < 3:
+            raise RetryableTrainerNotificationDeliveryError(
+                training_session_id=training_session_id,
+                notification_id=100,
+                delivery_attempt=delivery_attempt,
+                starts_at=NOW,
+                retry_after_seconds=None,
+            )
+        return NotifyTrainerBeforeSessionResult(
+            outcome=NotifyTrainerOutcome.SENT,
+            training_session_id=training_session_id,
+            attempts=delivery_attempt,
+            notification_id=notification_id,
+        )
+
+    monkeypatch.setattr(
+        trainer_notifications,
+        "run_notify",
+        retry_then_succeed,
+    )
+    task = trainer_notifications.notify_trainer_before_session
+    monkeypatch.setattr(task.app.conf, "task_always_eager", True)
+
+    result = task.apply(
+        kwargs={
+            "training_session_id": 42,
+            "delivery_attempt": 1,
+            "notification_id": None,
+        },
+        throw=False,
+    )
+
+    assert result.successful()
+    assert calls == [(1, None), (2, 100), (3, 100)]
+
+
+def test_poll_eager_delivery_retries_without_argument_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int | None]] = []
+
+    async def one_candidate() -> FindTrainerNotificationSessionsResult:
+        return FindTrainerNotificationSessionsResult(NOW, (42,))
+
+    async def retry_then_succeed(
+        *,
+        training_session_id: int,
+        delivery_attempt: int,
+        notification_id: int | None,
+    ) -> NotifyTrainerBeforeSessionResult:
+        calls.append((delivery_attempt, notification_id))
+        if delivery_attempt == 1:
+            raise RetryableTrainerNotificationDeliveryError(
+                training_session_id=training_session_id,
+                notification_id=103,
+                delivery_attempt=delivery_attempt,
+                starts_at=NOW,
+                retry_after_seconds=None,
+            )
+        return NotifyTrainerBeforeSessionResult(
+            outcome=NotifyTrainerOutcome.SENT,
+            training_session_id=training_session_id,
+            attempts=delivery_attempt,
+            notification_id=notification_id,
+        )
+
+    monkeypatch.setattr(trainer_notifications, "run_find", one_candidate)
+    monkeypatch.setattr(
+        trainer_notifications,
+        "run_notify",
+        retry_then_succeed,
+    )
+    task = trainer_notifications.notify_trainer_before_session
+    monkeypatch.setattr(task.app.conf, "task_always_eager", True)
+
+    result = trainer_notifications.poll_trainer_notifications.run()
+
+    assert result["candidate_count"] == 1
+    assert calls == [(1, None), (2, 103)]
+
+
+def test_eager_retry_after_keeps_server_delay_and_kwargs_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int | None]] = []
+    retry_options: list[dict[str, object]] = []
+
+    async def retry_after_then_succeed(
+        *,
+        training_session_id: int,
+        delivery_attempt: int,
+        notification_id: int | None,
+    ) -> NotifyTrainerBeforeSessionResult:
+        calls.append((delivery_attempt, notification_id))
+        if delivery_attempt == 1:
+            raise RetryableTrainerNotificationDeliveryError(
+                training_session_id=training_session_id,
+                notification_id=101,
+                delivery_attempt=delivery_attempt,
+                starts_at=NOW,
+                retry_after_seconds=90,
+            )
+        return NotifyTrainerBeforeSessionResult(
+            outcome=NotifyTrainerOutcome.SENT,
+            training_session_id=training_session_id,
+            attempts=delivery_attempt,
+            notification_id=notification_id,
+        )
+
+    monkeypatch.setattr(
+        trainer_notifications,
+        "run_notify",
+        retry_after_then_succeed,
+    )
+    task = trainer_notifications.notify_trainer_before_session
+    original_retry = task.retry
+
+    def recording_retry(*args: object, **kwargs: object) -> object:
+        retry_options.append(kwargs)
+        return original_retry(*args, **kwargs)
+
+    monkeypatch.setattr(task, "retry", recording_retry)
+    monkeypatch.setattr(task.app.conf, "task_always_eager", True)
+
+    result = task.apply(
+        kwargs={
+            "training_session_id": 42,
+            "delivery_attempt": 1,
+            "notification_id": None,
+        },
+        throw=False,
+    )
+
+    assert result.successful()
+    assert calls == [(1, None), (2, 101)]
+    assert retry_options[0]["countdown"] == 90
+    assert retry_options[0]["args"] == ()
+    assert retry_options[0]["kwargs"] == {
+        "training_session_id": 42,
+        "delivery_attempt": 2,
+        "notification_id": 101,
+    }
+
+
+def test_eager_retry_chain_stops_after_four_delivery_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    async def exhaust_retries(
+        *,
+        training_session_id: int,
+        delivery_attempt: int,
+        notification_id: int | None,
+    ) -> NotifyTrainerBeforeSessionResult:
+        calls.append(delivery_attempt)
+        if delivery_attempt < 4:
+            raise RetryableTrainerNotificationDeliveryError(
+                training_session_id=training_session_id,
+                notification_id=102,
+                delivery_attempt=delivery_attempt,
+                starts_at=NOW,
+                retry_after_seconds=None,
+            )
+        return NotifyTrainerBeforeSessionResult(
+            outcome=NotifyTrainerOutcome.TERMINAL_FAILED,
+            training_session_id=training_session_id,
+            attempts=delivery_attempt,
+            notification_id=notification_id,
+        )
+
+    monkeypatch.setattr(
+        trainer_notifications,
+        "run_notify",
+        exhaust_retries,
+    )
+    task = trainer_notifications.notify_trainer_before_session
+    monkeypatch.setattr(task.app.conf, "task_always_eager", True)
+
+    result = task.apply(
+        kwargs={
+            "training_session_id": 42,
+            "delivery_attempt": 1,
+            "notification_id": None,
+        },
+        throw=False,
+    )
+
+    assert result.successful()
+    assert calls == [1, 2, 3, 4]
+    assert result.result["outcome"] == NotifyTrainerOutcome.TERMINAL_FAILED.value

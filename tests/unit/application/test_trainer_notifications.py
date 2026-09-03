@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Self
@@ -33,8 +34,15 @@ class FrozenClock:
 
 
 class FakeReader:
-    def __init__(self, session: TrainerNotificationSession | None) -> None:
-        self.session = session
+    def __init__(
+        self,
+        session: TrainerNotificationSession | None,
+        fresh_session: TrainerNotificationSession | None = None,
+    ) -> None:
+        self.sessions = [session]
+        if fresh_session is not None or session is not None:
+            self.sessions.append(fresh_session if fresh_session is not None else session)
+        self.get_calls = 0
         self.expected_count = 0
         self.confirmed_count = 0
         self.find_result: tuple[int, ...] = ()
@@ -60,7 +68,9 @@ class FakeReader:
         training_session_id: int,
     ) -> TrainerNotificationSession | None:
         assert training_session_id == 42
-        return self.session
+        index = min(self.get_calls, len(self.sessions) - 1)
+        self.get_calls += 1
+        return self.sessions[index]
 
     async def count_expected(
         self,
@@ -86,11 +96,13 @@ class FakeDeliveryRepository:
         self.claim_result = TrainerNotificationClaim(
             outcome=TrainerNotificationClaimOutcome.ACQUIRED,
             attempts=1,
+            notification_id=100,
         )
         self.claim_calls = 0
-        self.sent: tuple[str, int, datetime] | None = None
-        self.failed_calls: list[tuple[str, int | None]] = []
-        self.released: tuple[str, int] | None = None
+        self.sent: tuple[int, str, int, datetime] | None = None
+        self.failed_calls: list[tuple[int, str, int]] = []
+        self.refreshed: tuple[int, str, int, int, datetime] | None = None
+        self.released: tuple[int, str, int] | None = None
         self.released_stale: tuple[str, datetime] | None = None
 
     async def claim(self, **kwargs: object) -> TrainerNotificationClaim:
@@ -101,35 +113,60 @@ class FakeDeliveryRepository:
     async def mark_sent(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         attempts: int,
         sent_at: datetime,
     ) -> bool:
-        self.sent = (idempotency_key, attempts, sent_at)
+        self.sent = (notification_id, idempotency_key, attempts, sent_at)
         return True
 
     async def mark_failed(
         self,
         *,
-        training_session_id: int,
-        recipient_user_id: int,
-        scheduled_at: datetime,
+        notification_id: int,
         idempotency_key: str,
-        expected_attempts: int | None,
+        expected_attempts: int,
         reference_now: datetime,
     ) -> bool:
-        del recipient_user_id, scheduled_at, reference_now
-        assert training_session_id == 42
-        self.failed_calls.append((idempotency_key, expected_attempts))
+        del reference_now
+        self.failed_calls.append(
+            (notification_id, idempotency_key, expected_attempts)
+        )
+        return True
+
+    async def refresh_pending(
+        self,
+        *,
+        notification_id: int,
+        idempotency_key: str,
+        expected_attempts: int,
+        recipient_user_id: int,
+        scheduled_at: datetime,
+        reference_now: datetime,
+    ) -> bool:
+        del reference_now
+        self.refreshed = (
+            notification_id,
+            idempotency_key,
+            expected_attempts,
+            recipient_user_id,
+            scheduled_at,
+        )
         return True
 
     async def release_pending(
         self,
         *,
+        notification_id: int,
         idempotency_key: str,
         expected_attempts: int,
     ) -> bool:
-        self.released = (idempotency_key, expected_attempts)
+        self.released = (
+            notification_id,
+            idempotency_key,
+            expected_attempts,
+        )
         return True
 
     async def release_stale_pending(
@@ -206,6 +243,7 @@ def make_session(
 
 def build(
     session: TrainerNotificationSession | None,
+    fresh_session: TrainerNotificationSession | None = None,
 ) -> tuple[
     NotifyTrainerBeforeSessionInteractor,
     FakeReader,
@@ -214,7 +252,7 @@ def build(
     FakeUnitOfWork,
     FrozenClock,
 ]:
-    reader = FakeReader(session)
+    reader = FakeReader(session, fresh_session)
     deliveries = FakeDeliveryRepository()
     notifier = FakeNotifier()
     uow = FakeUnitOfWork()
@@ -269,8 +307,8 @@ async def test_sends_zero_snapshot_using_materialized_session_times() -> None:
     assert message.expected_count == 0
     assert message.confirmed_count == 0
     assert reader.expected_args == (11, True, NOW)
-    assert deliveries.sent == ("TRAINER_SESSION_MINUS_5:42", 1, NOW)
-    assert uow.commits == 2
+    assert deliveries.sent == (100, "TRAINER_SESSION_MINUS_5:42", 1, NOW)
+    assert uow.commits == 3
     assert clock.calls == 1
 
 
@@ -280,11 +318,15 @@ async def test_retry_not_due_releases_only_its_pending_attempt() -> None:
     )
 
     result = await interactor(
-        NotifyTrainerBeforeSessionCommand(42, delivery_attempt=2)
+        NotifyTrainerBeforeSessionCommand(
+            42,
+            delivery_attempt=2,
+            notification_id=100,
+        )
     )
 
     assert result.outcome is NotifyTrainerOutcome.NOT_DUE
-    assert deliveries.released == ("TRAINER_SESSION_MINUS_5:42", 1)
+    assert deliveries.released == (100, "TRAINER_SESSION_MINUS_5:42", 1)
     assert notifier.sent is None
     assert uow.commits == 1
 
@@ -331,9 +373,11 @@ async def test_terminal_skip_is_persisted_as_failed(
     result = await interactor(NotifyTrainerBeforeSessionCommand(42))
 
     assert result.outcome is outcome
-    assert deliveries.failed_calls == [("TRAINER_SESSION_MINUS_5:42", None)]
+    assert deliveries.failed_calls == [
+        (100, "TRAINER_SESSION_MINUS_5:42", 1)
+    ]
     assert notifier.sent is None
-    assert uow.commits == 1
+    assert uow.commits == 2
 
 
 async def test_retryable_error_raises_for_celery_and_keeps_pending() -> None:
@@ -344,6 +388,8 @@ async def test_retryable_error_raises_for_celery_and_keeps_pending() -> None:
         await interactor(NotifyTrainerBeforeSessionCommand(42))
 
     assert raised.value.retry_after_seconds is None
+    assert raised.value.notification_id == 100
+    assert raised.value.delivery_attempt == 1
     assert deliveries.failed_calls == []
 
 
@@ -354,7 +400,9 @@ async def test_retry_after_past_start_becomes_terminal_failed() -> None:
     result = await interactor(NotifyTrainerBeforeSessionCommand(42))
 
     assert result.outcome is NotifyTrainerOutcome.TERMINAL_FAILED
-    assert deliveries.failed_calls == [("TRAINER_SESSION_MINUS_5:42", 1)]
+    assert deliveries.failed_calls == [
+        (100, "TRAINER_SESSION_MINUS_5:42", 1)
+    ]
 
 
 async def test_fresh_pending_skips_counts_and_send() -> None:
@@ -362,6 +410,7 @@ async def test_fresh_pending_skips_counts_and_send() -> None:
     deliveries.claim_result = TrainerNotificationClaim(
         outcome=TrainerNotificationClaimOutcome.IN_PROGRESS,
         attempts=1,
+        notification_id=100,
     )
 
     result = await interactor(NotifyTrainerBeforeSessionCommand(42))
@@ -369,3 +418,39 @@ async def test_fresh_pending_skips_counts_and_send() -> None:
     assert result.outcome is NotifyTrainerOutcome.IN_PROGRESS
     assert reader.expected_args is None
     assert notifier.sent is None
+
+
+async def test_post_claim_fresh_group_and_times_drive_counts_and_message() -> None:
+    preliminary = make_session()
+    fresh = replace(
+        preliminary,
+        group_id=22,
+        starts_at=NOW + timedelta(minutes=4),
+        ends_at=NOW + timedelta(hours=2),
+        sport_direction_name="Бокс",
+        group_name="Старшая группа",
+    )
+    interactor, reader, deliveries, notifier, _, _ = build(preliminary, fresh)
+    reader.expected_count = 6
+    reader.confirmed_count = 7
+
+    result = await interactor(NotifyTrainerBeforeSessionCommand(42))
+
+    assert result.outcome is NotifyTrainerOutcome.SENT
+    assert reader.get_calls == 2
+    assert reader.expected_args == (22, True, NOW)
+    assert deliveries.refreshed == (
+        100,
+        "TRAINER_SESSION_MINUS_5:42",
+        1,
+        7,
+        fresh.starts_at - timedelta(minutes=5),
+    )
+    assert notifier.sent is not None
+    _, message = notifier.sent
+    assert message.sport_direction_name == "Бокс"
+    assert message.group_name == "Старшая группа"
+    assert message.starts_at == fresh.starts_at.astimezone(CLUB_TIMEZONE)
+    assert message.ends_at == fresh.ends_at.astimezone(CLUB_TIMEZONE)
+    assert message.expected_count == 6
+    assert message.confirmed_count == 7
